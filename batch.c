@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
 
     printf("P3\n%d %d\n255\n", batch.image_width, batch.image_height);
 
-    camera_step(&batch, -1);
+    camera_step_linear(&batch, -1);
 
     fprintf(stderr, "Done\n");
 
