@@ -60,6 +60,10 @@ int main(int argc, char *argv[])
 
     for (bool is_playing = true, start = true, step = false; is_playing; )
     {
+        static bool is_linear = true;
+        static float offset_x = 0;
+        static float offset_z = 0;
+
         for (SDL_Event event; SDL_PollEvent(&event); )
         {
             if (SDL_QUIT == event.type)
@@ -69,6 +73,36 @@ int main(int argc, char *argv[])
 	    else if (window_resize_maybe(event, &window_width, &window_height))
             {
                 TRY(!(surface = SDL_GetWindowSurface(window)));
+                start = true;
+            }
+            else if (SDL_KEYDOWN == event.type && 'i' == event.key.keysym.sym)
+            {
+                is_linear = true;
+                start = true;
+            }
+            else if (SDL_KEYDOWN == event.type && 'r' == event.key.keysym.sym)
+            {
+                is_linear = false;
+                start = true;
+            }
+            else if (SDL_KEYDOWN == event.type && 'd' == event.key.keysym.sym)
+            {
+                offset_x++;
+                start = true;
+            }
+            else if (SDL_KEYDOWN == event.type && 'a' == event.key.keysym.sym)
+            {
+                offset_x--;
+                start = true;
+            }
+            else if (SDL_KEYDOWN == event.type && 'w' == event.key.keysym.sym)
+            {
+                offset_z++;
+                start = true;
+            }
+            else if (SDL_KEYDOWN == event.type && 's' == event.key.keysym.sym)
+            {
+                offset_z--;
                 start = true;
             }
         }
@@ -81,18 +115,23 @@ int main(int argc, char *argv[])
 
         if (start)
         {
+            SDL_FillRect(surface, NULL, 0);
             camera = scenes[2].camera;
 #if 0
 	    camera.vfov = 90;
 	    camera.samples_per_pixel = 10;
 	    camera.max_depth = 10;
 #endif
+	    camera.samples_per_pixel = 1;
             camera.image_width = window_width;
             camera.desired_aspect_ratio = window_width / (dist)window_height;
 	    camera.udata = surface;
 	    camera.log = false;
 	    camera.set_pixel = set_pixel;
 	    camera.world = &scenes[2].world;
+
+            camera.lookfrom.x += offset_x;
+            camera.lookfrom.z += offset_z;
 
             camera_init(&camera);
 
@@ -107,7 +146,7 @@ int main(int argc, char *argv[])
             #define DESIRED_FRAME 1000 / (dist)24
             uint64_t timeout = SDL_GetTicks64() + DESIRED_FRAME;
             while (SDL_GetTicks64() < timeout)
-                step = !camera_step(&camera, 100);
+                step = !(is_linear ? camera_step_linear : camera_step_random)(&camera, 100);
 
             SDL_UnlockSurface(surface);
 	}

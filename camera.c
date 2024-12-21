@@ -67,7 +67,7 @@ void camera_init(struct camera *camera) {
     camera->sample = 0;
 }
 
-bool camera_step(struct camera *camera, int n)
+bool camera_step_linear(struct camera camera[static 1], int n)
 {
     for (; camera->j < camera->image_height; camera->j++)
     {
@@ -107,6 +107,47 @@ bool camera_step(struct camera *camera, int n)
     }
 
     return true;
+}
+
+// XXX Code copied from `camera_step_linear`, kinda sus.
+bool camera_step_random(struct camera camera[static 1], int n)
+{
+    assert(n >= 0);
+
+    while (n > 0)
+    {
+        if (0 == camera->sample)
+        {
+            camera->i = random01() * camera->image_width; 
+            camera->j = random01() * camera->image_height; 
+            camera->pixel_color = VEC3(0,0,0);
+        }
+
+        for (; camera->sample < camera->samples_per_pixel; camera->sample++)
+        {
+            if (0 == n)
+                return false;
+            else
+                n--;
+
+            struct ray r = get_ray(camera, camera->i, camera->j);
+            camera->pixel_color = sum(
+                camera->pixel_color,
+                ray_color(r, camera->max_depth, camera->world)
+            );
+        }
+
+        camera->set_pixel(
+            camera->udata,
+            camera->i,
+            camera->j,
+            COLOR_BLOW(camera->pixel_color, camera->samples_per_pixel)
+        );
+
+        camera->sample = 0;
+    }
+
+    return false;
 }
 
 static union vec3 ray_color(struct ray ray, int depth, struct hittable *world)

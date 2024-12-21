@@ -48,6 +48,10 @@ struct camera
 };
 
 void camera_init(struct camera *camera);
-bool camera_step(struct camera *camera, int n);
+bool camera_step_linear(struct camera camera[static 1], int n);
+bool camera_step_random(struct camera camera[static 1], int n);
+
+// `n` can be negative for `camera_step_linear` so it runs to the end,
+// but `camera_step_linear` runs indefitely, so `n` must be 0 or more.
 
 #endif
