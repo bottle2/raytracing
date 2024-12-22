@@ -1,4 +1,6 @@
-CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -O3 -march=native -flto
+#CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -O3 -march=native -flto
+#CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -g3 -fsanitize=undefined,address
+CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -g3
 OBJECT=camera.o hit_record.o hittable.o interval.o material.o ray.o scene.o sphere.o util.o vec3.o
 LDLIBS=
 
@@ -46,5 +48,5 @@ tags:
 	ctags -a -R --c-kinds=dept "$$(sdl2-config --prefix)/include/SDL2"
 
 raytracing.zip:
-	emcc -O3 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=65536000  -sASSERTIONS -sSAFE_HEAP=1 -sASYNCIFY_STACK_SIZE=262144 -sASYNCIFY -sSINGLE_FILE $$(find . -name '*.c' ! -name batch.c) --use-port=sdl2 -o index.html --shell-file=shell.html
+	emcc -O3 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=655360000  -sASSERTIONS -sSAFE_HEAP=1 -sSINGLE_FILE $$(find . -name '*.c' ! -name batch.c ! -name simple.c) --use-port=sdl2 -o index.html --shell-file=shell.html
 	7z a raytracing.zip index.html #index.{html,js,wasm}
