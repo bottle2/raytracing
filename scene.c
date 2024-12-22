@@ -1,3 +1,6 @@
+#define _USE_MATH_DEFINES
+#include <math.h>
+
 #include "camera.h"
 #include "hittable.h"
 #include "material.h"

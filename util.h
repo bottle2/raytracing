@@ -11,4 +11,6 @@ dist random01(void);
 // Returns a random real in [min,max). 
 dist random_interval(dist min, dist max);
 
+#define UNCHECKED(...) (__VA_ARGS__)
+
 #endif

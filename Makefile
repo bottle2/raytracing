@@ -1,4 +1,4 @@
-CFLAGS=-Wpedantic -Wall -Wextra -O3 -march=native -flto
+CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -O3 -march=native -flto
 OBJECT=camera.o hit_record.o hittable.o interval.o material.o ray.o scene.o sphere.o util.o vec3.o
 LDLIBS=
 
@@ -13,7 +13,7 @@ batch:$(OBJECT) batch.c
 	$(CC) $(CFLAGS) -o $@ batch.c $(OBJECT) $(LDLIBS)
 
 interactive:$(OBJECT) interactive.c
-	$(CC) $$(pkg-config --cflags SDL2) -o $@ interactive.c $(OBJECT) $$(pkg-config --libs SDL2)
+	$(CC) $(CFLAGS) $$(pkg-config --cflags SDL2) -o $@ interactive.c $(OBJECT) $$(pkg-config --libs SDL2)
 
 basic.h:precision.h
 	touch $@
@@ -46,5 +46,5 @@ tags:
 	ctags -a -R --c-kinds=dept "$$(sdl2-config --prefix)/include/SDL2"
 
 raytracing.zip:
-	emcc -Os -sASYNCIFY_STACK_SIZE=262144 -sASYNCIFY -sSINGLE_FILE $$(find . -name '*.c' ! -name batch.c) --use-port=sdl2 -o index.html --shell-file=shell.html
+	emcc -O3 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=65536000  -sASSERTIONS -sSAFE_HEAP=1 -sASYNCIFY_STACK_SIZE=262144 -sASYNCIFY -sSINGLE_FILE $$(find . -name '*.c' ! -name batch.c) --use-port=sdl2 -o index.html --shell-file=shell.html
 	7z a raytracing.zip index.html #index.{html,js,wasm}
