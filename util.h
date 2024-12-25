@@ -12,5 +12,6 @@ dist random01(void);
 dist random_interval(dist min, dist max);
 
 #define UNCHECKED(...) (__VA_ARGS__)
+#define NIL
 
 #endif

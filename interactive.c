@@ -5,6 +5,13 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+
+#define LOOP(ITER) emscripten_set_main_loop((ITER), 0, 1)
+#define LOOP_END emscripten_cancel_main_loop()
+#else
+static bool is_playing = true;
+#define LOOP(ITER) while (is_playing) (ITER)()
+#define LOOP_END is_playing = false
 #endif
 
 #include "camera.h"
@@ -12,7 +19,15 @@
 #include "scene.h"
 #include "util.h"
 
-#define FILL_THING
+#ifndef BITS_PER_PIXEL
+#define BITS_PER_PIXEL 32
+#endif
+#if 32 == BITS_PER_PIXEL
+#define PIXEL_INDEX(PIXELS, I, J, PITCH) \
+	(((uint32_t *)(((unsigned char *)(PIXELS)) + (J) * (PITCH)))[(I)])
+#else
+#error Not implemented
+#endif
 
 #define TRY(IT) \
 if ((IT)) { SDL_LogError(SDL_LOG_CATEGORY_ERROR, __FILE__ ":%d: %s\n", __LINE__, SDL_GetError()); \
@@ -27,6 +42,7 @@ static inline bool window_resize_maybe(SDL_Event event, int *width, int *height)
     if (event.type != SDL_WINDOWEVENT) return false;
     if (SDL_WINDOWEVENT_RESIZED      != event.window.event &&
         SDL_WINDOWEVENT_SIZE_CHANGED != event.window.event) return false;
+    if (*width == event.window.data1 && *height == event.window.data2) return false;
 
     *width  = event.window.data1;
     *height = event.window.data2;
@@ -47,201 +63,118 @@ int pitch = -1;
 static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
 {
     if (x >= window_width || y >= window_height) return;
-#if 0
-    SDL_Surface *surface = data;
-#endif
-#if 0
-    *(uint32_t *)(((unsigned char *)surface->pixels) + x * surface->format->BytesPerPixel + y * surface->pitch) = SDL_MapRGB(surface->format, r, g, b);
-#else
     unsigned char *pipi = data;
     pipi += x * pf->BytesPerPixel + y * pitch;
     *(uint32_t *)pipi = SDL_MapRGB(pf, r, g, b);
     used[x + y * window_width] = true;
     pending[pending_n++] = (SDL_Point){x,y};
-#endif
 }
-
-static bool is_playing = true;
 
 SDL_Window *window = NULL;
 
-int max_burst = 0;
-int n_targets_reset = 0;
-int n_device_reset = 0;
-int n_device_lost = 0;
+static struct camera camera;
+int scene_i = 2;
+
+static float offset_x = 0;
+static float offset_z = 0;
+
+static void change(int i)
+{
+    camera = scenes[i].camera;
+#if 0
+    camera.vfov = 90;
+    camera.samples_per_pixel = 10;
+    camera.max_depth = 10;
+#endif
+    camera.samples_per_pixel = 1;
+    camera.image_width = window_width;
+    camera.desired_aspect_ratio = window_width / (dist)window_height;
+#if 0
+    camera.udata = surface;
+#endif
+    camera.log = false;
+    camera.set_pixel = set_pixel;
+    camera.world = &scenes[i].world;
+
+    camera.lookfrom.x += offset_x;
+    camera.lookfrom.z += offset_z;
+
+    camera_init(&camera);
+}
 
 static void iter(void)
 {
-    static bool start = true;
-    static bool step = false;
+    static bool step = true;
     static bool is_linear = true;
     static bool is_horizontal = true;
-    static float offset_x = 0;
-    static float offset_z = 0;
-
-    int burst = 0;
 
     for (SDL_Event event; SDL_PollEvent(&event); )
     {
         if (SDL_QUIT == event.type)
         {
-            SDL_Log("Longest burst: %d\nTargets reset count: %d\nDevice reset count: %d\nDevice lost count: %d\n", max_burst, n_targets_reset, n_device_reset, n_device_lost);
-
+            SDL_DestroyTexture(texture);
+            SDL_DestroyRenderer(renderer);
             SDL_DestroyWindow(window);
-
             SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
-            is_playing = false;
-
-#ifdef __EMSCRIPTEN__
-	    emscripten_cancel_main_loop();
-#endif
+	    LOOP_END;
         }
-        else if (SDL_KEYDOWN == event.type && 'q' == event.key.keysym.sym)
-            TRY(SDL_PushEvent(&(SDL_Event){.type = SDL_QUIT}) < 0);
         else if (window_resize_maybe(event, &window_width, &window_height))
         {
-#ifdef FILL_THING
             // TODO WTF how about realloc HMMM ?
             memset(used, 0, sizeof (bool) * window_width * window_height);
             pending_i = 0;
             pending_n = 0;
 
-	    SDL_Log("%p\n", (void *)texture);
             SDL_DestroyTexture(texture);
             TRY(!(texture = SDL_CreateTexture(renderer,
                             pixel_format, SDL_TEXTUREACCESS_STREAMING,
                             window_width, window_height)));
-	    SDL_Log("%p\n", (void *)texture);
-#endif
-#if 0
-            TRY(!(surface = SDL_GetWindowSurface(window)));
-#endif
-            start = true;
+            change(scene_i); step = true;
         }
-        else if (SDL_KEYDOWN == event.type && 'i' == event.key.keysym.sym)
+	else if (SDL_KEYDOWN == event.type)
         {
-            is_linear = true;
-            start = true;
+            switch (event.key.keysym.sym)
+            {
+                case 'q':
+                    TRY(SDL_PushEvent(&(SDL_Event){.type = SDL_QUIT}) < 0);
+                break;
+                case 'l': is_linear     = !is_linear;     break;
+                case 'h': is_horizontal = !is_horizontal; break;
+                case 'd': offset_x++; break;
+                case 'a': offset_x--; break;
+                case 'w': offset_z++; break;
+                case 's': offset_z--; break;
+                case '1': scene_i = 0; break;
+                case '2': scene_i = 1; break;
+                case '3': scene_i = 2; break;
+                default: goto keep; break;
+            }
+            change(scene_i);
+            step = true;
+            keep:;
         }
-        else if (SDL_KEYDOWN == event.type && 'r' == event.key.keysym.sym)
+        else if (SDL_MOUSEBUTTONDOWN == event.type)
         {
-            is_linear = false;
-            start = true;
+            // TODO grab mouse
+            // TODO warp mouse
         }
-        else if (SDL_KEYDOWN == event.type && 'd' == event.key.keysym.sym)
-        {
-            offset_x++;
-            start = true;
-        }
-        else if (SDL_KEYDOWN == event.type && 'a' == event.key.keysym.sym)
-        {
-            offset_x--;
-            start = true;
-        }
-        else if (SDL_KEYDOWN == event.type && 'w' == event.key.keysym.sym)
-        {
-            offset_z++;
-            start = true;
-        }
-        else if (SDL_KEYDOWN == event.type && 's' == event.key.keysym.sym)
-        {
-            offset_z--;
-            start = true;
-        }
-        else if (SDL_KEYDOWN == event.type && 'h' == event.key.keysym.sym)
-        {
-            is_horizontal = true;
-            start = true;
-        }
-        else if (SDL_KEYDOWN == event.type && 'f' == event.key.keysym.sym)
-        {
-            is_horizontal = false;
-            start = true;
-        }
-        else if (SDL_RENDER_TARGETS_RESET == event.type)
-        {
-	    SDL_Log("%p\n", (void *)texture);
-            SDL_DestroyTexture(texture);
-            TRY(!(texture = SDL_CreateTexture(renderer,
-                            pixel_format, SDL_TEXTUREACCESS_STREAMING,
-                            window_width, window_height)));
-	    SDL_Log("%p\n", (void *)texture);
-            burst++;
-            n_targets_reset++;
-        }
-        else if (SDL_RENDER_DEVICE_RESET == event.type)
-        {
-	    SDL_Log("%p\n", (void *)texture);
-            SDL_DestroyTexture(texture);
-            TRY(!(texture = SDL_CreateTexture(renderer,
-                            pixel_format, SDL_TEXTUREACCESS_STREAMING,
-                            window_width, window_height)));
-	    SDL_Log("%p\n", (void *)texture);
-
-            burst++;
-            n_device_reset++;
-        }
-#if 0
-        else if (SDL_RENDER_DEVICE_LOST == event.type)
-        {
-            burst++;
-            n_device_lost++;
-        }
-#endif
     }
-
-    if (burst > max_burst)
-        max_burst = burst;
 
     // XXX check if sdl has lalalal
     // XXX check if lock needed
     // XXX add fullscreen
 
-    static struct camera camera;
-
-    if (start)
-    {
-#if 0
-        SDL_FillRect(surface, NULL, 0);
-#endif
-        camera = scenes[2].camera;
-#if 0
-        camera.vfov = 90;
-        camera.samples_per_pixel = 10;
-        camera.max_depth = 10;
-#endif
-        camera.samples_per_pixel = 1;
-        camera.image_width = window_width;
-        camera.desired_aspect_ratio = window_width / (dist)window_height;
-#if 0
-        camera.udata = surface;
-#endif
-        camera.log = false;
-        camera.set_pixel = set_pixel;
-        camera.world = &scenes[2].world;
-
-        camera.lookfrom.x += offset_x;
-        camera.lookfrom.z += offset_z;
-
-        camera_init(&camera);
-
-        start = false;
-        step = true;
-    }
-
     if (step)
     {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 1);
         SDL_RenderClear(renderer);
-#if 0
-        TRY(SDL_LockSurface(surface));
-#endif
+
         void *pixels = NULL;
         TRY(SDL_LockTexture(texture, NULL, &pixels, &pitch));
         memset(pixels, 0, pitch * window_height); 
         camera.udata = pixels;
 
-        #define DESIRED_FRAME 1000 / (dist)12
+        #define DESIRED_FRAME 1000 / (dist)24
         uint64_t timeout = SDL_GetTicks64() + DESIRED_FRAME;
         while (SDL_GetTicks64() < timeout)
             step = !(is_linear ? camera_step_linear : camera_step_random)(&camera, 100);
@@ -249,48 +182,42 @@ static void iter(void)
         // Do some shit. lazy ass stupid bitch thing.
 
         if (is_horizontal)
-#ifdef FILL_THING
-        for (int j = 0; j < window_height; j++)
-        {
-            uint8_t prev_r;
-            uint8_t prev_g;
-            uint8_t prev_b;
-            int last = -1;
-            for (int i = 0; i < window_width; i++)
+            for (int j = 0; j < window_height; j++)
             {
-                if (!used[i + j * window_width])
-                    continue;
-                // Copied from callback.
-                unsigned char *pipi = pixels;
-                pipi += i * pf->BytesPerPixel + j * pitch;
-                uint8_t curr_r;
-                uint8_t curr_g;
-                uint8_t curr_b;
-                SDL_GetRGB(*(uint32_t *)pipi, pf, &curr_r, &curr_g, &curr_b);
+                uint8_t prev_r;
+                uint8_t prev_g;
+                uint8_t prev_b;
+                int last = -1;
+                #define FILL(FROM, TO, GEN) \
+                for (int k = (FROM); k < (TO); k++) \
+                    PIXEL_INDEX(pixels, k, j, pitch) = SDL_MapRGB(pf, GEN##_r, GEN##_g, GEN##_b)
 
-                // Ugh
-                if (-1 == last)
+                for (int i = 0; i < window_width; i++)
                 {
-                    for (int k = 0; k < i; k++)
-                        *(uint32_t *)(((unsigned char *)pixels) + k * pf->BytesPerPixel + j * pitch) = SDL_MapRGB(pf, curr_r, curr_g, curr_b);
-                }
-                else
-                {
-                    for (int k = last; k < (last + i) / 2; k++)
-                        *(uint32_t *)(((unsigned char *)pixels) + k * pf->BytesPerPixel + j * pitch) = SDL_MapRGB(pf, prev_r, prev_g, prev_b);
-                    for (int k = (last + i) / 2; k < i; k++)
-                        *(uint32_t *)(((unsigned char *)pixels) + k * pf->BytesPerPixel + j * pitch) = SDL_MapRGB(pf, curr_r, curr_g, curr_b);
-                }
+                    if (!used[i + j * window_width])
+                        continue;
+                    // Copied from callback.
+                    uint8_t curr_r;
+                    uint8_t curr_g;
+                    uint8_t curr_b;
+                    SDL_GetRGB(PIXEL_INDEX(pixels, i, j, pitch), pf, &curr_r, &curr_g, &curr_b);
 
-                prev_r = curr_r;
-                prev_g = curr_g;
-                prev_b = curr_b;
+                    if (-1 == last) FILL(0, i, curr);
+                    else
+                    {
+                        FILL(last, (last + i) / 2, prev);
+                        FILL((last + i) / 2, i, curr);
+                    }
 
-                last = i;
+                    prev_r = curr_r;
+                    prev_g = curr_g;
+                    prev_b = curr_b;
+
+                    last = i;
+                }
+                FILL(last, window_width, prev);
+                #undef FILL
             }
-            for (; last < window_width; last++)
-                *(uint32_t *)(((unsigned char *)pixels) + last * pf->BytesPerPixel + j * pitch) = SDL_MapRGB(pf, prev_r, prev_g, prev_b);
-        }
         else // Do the radial
         {
             for (; pending_i != pending_n; pending_i = (pending_i + 1) % (window_width * window_height))
@@ -298,37 +225,19 @@ static void iter(void)
                 uint8_t r;
                 uint8_t g;
                 uint8_t b;
-                unsigned char *pipi = pixels;
-                pipi += pending[pending_i].x * pf->BytesPerPixel + pending[pending_i].y * pitch;
-                SDL_GetRGB(*(uint32_t *)pipi, pf, &r, &g, &b);
-                // I feel dirty
                 int x = pending[pending_i].x;
                 int y = pending[pending_i].y;
-		if (x > 4000 || y > 4000) continue;
-                if (x > 0 && !used[x - 1 + y * window_width]++)
-                {
-                    *(uint32_t *)(((unsigned char *)pixels) + (x-1) * pf->BytesPerPixel + y * pitch) = SDL_MapRGB(pf, r, g, b);
-                    pending[pending_n] = (SDL_Point){x-1, y};
-                    pending_n = (pending_n + 1) % (window_width * window_height);
-                }
-                if (x < window_width - 1 && !used[x+1 + y * window_width]++)
-                {
-                    *(uint32_t *)(((unsigned char *)pixels) + (x+1) * pf->BytesPerPixel + y * pitch) = SDL_MapRGB(pf, r, g, b);
-                    pending[pending_n] = (SDL_Point){x+1, y};
-                    pending_n = (pending_n + 1) % (window_width * window_height);
-                }
-                if (y > 0 && !used[x + (y-1) * window_width]++)
-                {
-                    *(uint32_t *)(((unsigned char *)pixels) + x * pf->BytesPerPixel + (y-1) * pitch) = SDL_MapRGB(pf, r, g, b);
-                    pending[pending_n] = (SDL_Point){x, y-1};
-                    pending_n = (pending_n + 1) % (window_width * window_height);
-                }
-                if (y < window_height - 1 && !used[x + (y+1) * window_width]++)
-                {
-                    *(uint32_t *)(((unsigned char *)pixels) + x * pf->BytesPerPixel + (y+1) * pitch) = SDL_MapRGB(pf, r, g, b);
-                    pending[pending_n] = (SDL_Point){x, y+1};
-                    pending_n = (pending_n + 1) % (window_width * window_height);
-                }
+                SDL_GetRGB(PIXEL_INDEX(pixels, x, y, pitch), pf, &r, &g, &b);
+                #define FILL(CMP, I, J) \
+                if ((CMP) && !used[(I) + (J)*window_width]++) \
+                {   PIXEL_INDEX(pixels,(I),(J),pitch) = SDL_MapRGB(pf,r,g,b); \
+                    pending[pending_n] = (SDL_Point){(I),(J)};                \
+                    pending_n = (pending_n+1) % (window_width*window_height); }
+                FILL(x-1 >= 0, x-1, y)
+                FILL(x+1 < window_width, x+1, y)
+                FILL(y-1 >= 0, x, y-1)
+                FILL(y+1 < window_height, x, y+1)
+                #undef FILL
             }
             // Lala
             pending_i = 0;
@@ -336,20 +245,12 @@ static void iter(void)
         }
 
         memset(used, 0, sizeof (bool) * window_height * window_width);
-#endif
 
-#if 0
-        SDL_UnlockSurface(surface);
-#else
         SDL_UnlockTexture(texture);
         SDL_RenderCopy(renderer, texture, NULL, NULL);
-#endif
     }
 
     SDL_RenderPresent(renderer);
-#if 0
-    SDL_UpdateWindowSurface(window);
-#endif
 }
 
 int main(int argc, char *argv[])
@@ -358,6 +259,8 @@ int main(int argc, char *argv[])
     (void)argv;
 
     scenes_init();
+
+    change(2);
 
     atexit(SDL_Quit);
 
@@ -385,20 +288,11 @@ int main(int argc, char *argv[])
     }
 
     TRY(!(pf = SDL_AllocFormat(pixel_format)));
-#if 0
-    SDL_Surface *surface = NULL;
-    TRY(!(surface = SDL_GetWindowSurface(window)));
-#endif
     TRY(!(texture = SDL_CreateTexture(renderer,
                     pixel_format, SDL_TEXTUREACCESS_STREAMING,
                     window_width, window_height)));
-    SDL_Log("%p\n", (void *)texture);
 
-#ifdef __EMSCRIPTEN__
-    emscripten_set_main_loop(iter, 0, 1);
-#else
-    while (is_playing) iter();
-#endif
+    LOOP(iter);
 
     return 0;
 }
