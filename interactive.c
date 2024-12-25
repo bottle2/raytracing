@@ -190,10 +190,36 @@ static void iter(void)
                 break;
                 case 'l': is_linear     = !is_linear;     break;
                 case 'h': is_horizontal = !is_horizontal; break;
-                case 'd': camera.lookfrom.x++; camera_init(&camera); break;
-                case 'a': camera.lookfrom.x--; camera_init(&camera); break;
-                case 'w': camera.lookfrom.z++; camera_init(&camera); break;
-                case 's': camera.lookfrom.z--; camera_init(&camera); break;
+                case 'd':
+                    camera.lookfrom = sum(camera.lookfrom, VEC3(-sin(util_deg2rad(yaw)), 0, cos(util_deg2rad(yaw))));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera_init(&camera);
+                break;
+                case 'a':
+                    camera.lookfrom = sub(camera.lookfrom, VEC3(-sin(util_deg2rad(yaw)), 0, cos(util_deg2rad(yaw))));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera_init(&camera);
+                break;
+                case 'w':
+                    camera.lookfrom = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), 0, sin(util_deg2rad(yaw))));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera_init(&camera);
+                break;
+                case 's':
+                    camera.lookfrom = sub(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), 0, sin(util_deg2rad(yaw))));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera_init(&camera);
+                break;
+                case SDLK_LSHIFT:
+                    camera.lookfrom.y--;
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera_init(&camera);
+                break;
+                case SDLK_SPACE:
+                    camera.lookfrom.y++;
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera_init(&camera);
+                break;
                 case '1': setup(scene_i = 0); break;
                 case '2': setup(scene_i = 1); break;
                 case '3': setup(scene_i = 2); break;
