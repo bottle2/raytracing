@@ -11,6 +11,11 @@ dist util_deg2rad(dist deg)
     return deg * M_PI / 180.0;
 }
 
+dist util_rad2deg(dist rad)
+{
+    return rad * 180.0 / M_PI;
+}
+
 // Returns a random real in [0,1). 
 dist random01(void)
 {

@@ -4,6 +4,7 @@
 #include "precision.h"
 
 dist util_deg2rad(dist deg);
+dist util_rad2deg(dist rad);
 
 // Returns a random real in [0,1). 
 dist random01(void);

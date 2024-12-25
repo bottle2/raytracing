@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include <SDL.h>
+#include <tgmath.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -18,6 +19,7 @@ static bool is_playing = true;
 #include "color.h"
 #include "scene.h"
 #include "util.h"
+#include "vec3.h"
 
 #ifndef BITS_PER_PIXEL
 #define BITS_PER_PIXEL 32
@@ -75,31 +77,71 @@ SDL_Window *window = NULL;
 static struct camera camera;
 int scene_i = 2;
 
-static float offset_x = 0;
-static float offset_z = 0;
+static dist yaw = 0; // Degrees. Look to your left and right
+static dist pitch_angle = 0; // Degrees. Look upwards downwards
+#if 0
+static int framerates[] = {6, 12, 24, 30, 60, 90, 120, 144};
+static int framerate_i = 0;
+static int framerate = 12;
+#endif
 
-static void change(int i)
+// TODO we have to add physics, framerate independent motion and configuration
+// that is, if it is lagging, settings are changed independently from
+// framerate
+
+struct user
 {
-    camera = scenes[i].camera;
+    union vec3 offset;
+    union vec3 looking;
+    int framerate;
+};
+
+#if 0
+static void change(void)
+{
 #if 0
     camera.vfov = 90;
     camera.samples_per_pixel = 10;
     camera.max_depth = 10;
 #endif
-    camera.samples_per_pixel = 1;
-    camera.image_width = window_width;
-    camera.desired_aspect_ratio = window_width / (dist)window_height;
 #if 0
     camera.udata = surface;
 #endif
+
+#if 0
+    union vec3 forward = sub(camera.lookat, camera.lookfrom);
+
+    {
+        dist new_x = forward.x * cos(yaw) - forward.z * sin(yaw);
+        dist new_z = forward.x * sin(yaw) - forward.z * cos(yaw);
+        forward.x = new_x;
+        forward.z = new_z;
+    }
+#endif
+
+#if 0
+    camera.lookat = @;
+#endif
+
+}
+#endif
+
+static void setup(int i)
+{
+    camera = scenes[i].camera;
+    camera.samples_per_pixel = 1;
+    camera.image_width = window_width;
+    camera.desired_aspect_ratio = window_width / (dist)window_height;
     camera.log = false;
     camera.set_pixel = set_pixel;
     camera.world = &scenes[i].world;
-
-    camera.lookfrom.x += offset_x;
-    camera.lookfrom.z += offset_z;
-
     camera_init(&camera);
+
+    {
+        union vec3 forward = unit(sub(camera.lookat, camera.lookfrom));
+        yaw = util_rad2deg(atan2(forward.z, forward.x));
+        pitch_angle = util_rad2deg(-asin(forward.y));
+    }
 }
 
 static void iter(void)
@@ -117,6 +159,7 @@ static void iter(void)
             SDL_DestroyWindow(window);
             SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
 	    LOOP_END;
+            // TODO but will try to render something in the end BROKEN
         }
         else if (window_resize_maybe(event, &window_width, &window_height))
         {
@@ -129,7 +172,7 @@ static void iter(void)
             TRY(!(texture = SDL_CreateTexture(renderer,
                             pixel_format, SDL_TEXTUREACCESS_STREAMING,
                             window_width, window_height)));
-            change(scene_i); step = true;
+            setup(scene_i); step = true;
         }
 	else if (SDL_KEYDOWN == event.type)
         {
@@ -138,26 +181,60 @@ static void iter(void)
                 case 'q':
                     TRY(SDL_PushEvent(&(SDL_Event){.type = SDL_QUIT}) < 0);
                 break;
+                case SDLK_ESCAPE:
+                    SDL_SetRelativeMouseMode(false);
+#if 0
+                    SDL_ShowCursor(SDL_ENABLE);
+                    SDL_SetWindowMouseGrab(window, false);
+#endif
+                break;
                 case 'l': is_linear     = !is_linear;     break;
                 case 'h': is_horizontal = !is_horizontal; break;
-                case 'd': offset_x++; break;
-                case 'a': offset_x--; break;
-                case 'w': offset_z++; break;
-                case 's': offset_z--; break;
-                case '1': scene_i = 0; break;
-                case '2': scene_i = 1; break;
-                case '3': scene_i = 2; break;
+                case 'd': camera.lookfrom.x++; camera_init(&camera); break;
+                case 'a': camera.lookfrom.x--; camera_init(&camera); break;
+                case 'w': camera.lookfrom.z++; camera_init(&camera); break;
+                case 's': camera.lookfrom.z--; camera_init(&camera); break;
+                case '1': setup(scene_i = 0); break;
+                case '2': setup(scene_i = 1); break;
+                case '3': setup(scene_i = 2); break;
+                case 'p': SDL_Log("%.3f %.3f", yaw, pitch_angle); break;
                 default: goto keep; break;
             }
-            change(scene_i);
             step = true;
             keep:;
         }
-        else if (SDL_MOUSEBUTTONDOWN == event.type)
+        else if (SDL_MOUSEBUTTONDOWN == event.type && 1 == event.button.button)
         {
-            // TODO grab mouse
-            // TODO warp mouse
+#if 0
+            SDL_ShowCursor(SDL_DISABLE);
+            SDL_SetWindowMouseGrab(window, true);
+	    // XXX I've read online that another option is to warp the
+	    // mouse to the center at the end of each frame or
+	    // something
+#else
+            SDL_SetRelativeMouseMode(true);
+#endif
         }
+	else if (SDL_RENDER_TARGETS_RESET == event.type || SDL_RENDER_DEVICE_RESET == event.type)
+	{
+            SDL_DestroyTexture(texture);
+            TRY(!(texture = SDL_CreateTexture(renderer,
+                            pixel_format, SDL_TEXTUREACCESS_STREAMING,
+                            window_width, window_height)));
+            setup(scene_i); step = true;
+	}
+	else if (SDL_MOUSEMOTION == event.type)
+	{
+            if (SDL_GetRelativeMouseMode())
+            {
+                yaw += event.motion.xrel / 2;
+                pitch_angle += event.motion.yrel / 2;
+                if (pitch_angle > 89) pitch_angle = 89;
+                else if (pitch_angle < -89) pitch_angle = -89;
+                camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                camera_init(&camera);
+            }
+	}
     }
 
     // XXX check if sdl has lalalal
@@ -260,7 +337,7 @@ int main(int argc, char *argv[])
 
     scenes_init();
 
-    change(2);
+    setup(2);
 
     atexit(SDL_Quit);
 
