@@ -12,7 +12,7 @@
 #else
 static bool is_playing = true;
 #define LOOP(ITER) while (is_playing) (ITER)()
-#define LOOP_END is_playing = false
+#define LOOP_END is_playing = false; return;
 #endif
 
 #include "camera.h"
@@ -154,6 +154,7 @@ static void iter(void)
     {
         if (SDL_QUIT == event.type)
         {
+            SDL_FreeFormat(pf);
             SDL_DestroyTexture(texture);
             SDL_DestroyRenderer(renderer);
             SDL_DestroyWindow(window);
@@ -163,6 +164,7 @@ static void iter(void)
         }
         else if (window_resize_maybe(event, &window_width, &window_height))
         {
+            SDL_RenderPresent(renderer);
             // TODO WTF how about realloc HMMM ?
             memset(used, 0, sizeof (bool) * window_width * window_height);
             pending_i = 0;
@@ -174,6 +176,8 @@ static void iter(void)
                             window_width, window_height)));
             setup(scene_i); step = true;
         }
+        else if (SDL_WINDOWEVENT == event.type && SDL_WINDOWEVENT_EXPOSED == event.window.type)
+            SDL_RenderPresent(renderer);
 	else if (SDL_KEYDOWN == event.type)
         {
             switch (event.key.keysym.sym)
@@ -318,7 +322,8 @@ static void iter(void)
 
                     last = i;
                 }
-                FILL(last, window_width, prev);
+                if (last != -1)
+                    FILL(last, window_width, prev);
                 #undef FILL
             }
         else // Do the radial

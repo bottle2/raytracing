@@ -48,5 +48,6 @@ tags:
 	ctags -a -R --c-kinds=dept "$$(sdl2-config --prefix)/include/SDL2"
 
 raytracing.zip:
-	emcc -O3 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=655360000  -sASSERTIONS -sSAFE_HEAP=1 -sSINGLE_FILE $$(find . -name '*.c' ! -name batch.c ! -name simple.c) --use-port=sdl2 -o index.html --shell-file=shell.html
+	#emcc -gsource-map -g3 -Og -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=655360000 -fsanitize=address,undefined $$(find . -name '*.c' ! -name batch.c ! -name simple.c) --use-port=sdl2 -o index.html --shell-file=shell.html
+	emcc -O3 -flto -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=655360000 $$(find . -name '*.c' ! -name batch.c ! -name simple.c) --use-port=sdl2 -o index.html --shell-file=shell.html
 	7z a raytracing.zip index.html #index.{html,js,wasm}
