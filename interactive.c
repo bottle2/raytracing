@@ -32,21 +32,24 @@ static int window_height = 600;
 
 static bool used[4000 * 4000] = {0};
 static SDL_Point pending[4000 * 4000] = {0};
-int pending_i = 0;
 int pending_n = 0;
 int pitch = -1;
 
 struct canvas canvas = {CANVAS_FILL_LINEAR, (pixel[4000*4000]){0}};
-static bool second_used[4000 * 4000] = {0};
 
 static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
 {
     if (x >= window_width || y >= window_height) return;
+#if 0
     unsigned char *pipi = data;
     pipi += x * pf->BytesPerPixel + y * pitch;
     *(uint32_t *)pipi = SDL_MapRGB(pf, r, g, b);
-    used[x + y * window_width] = true;
-    pending[pending_n++] = (SDL_Point){x,y};
+#else
+    (void)data;
+    canvas.pixels[x + y * window_width] = SDL_MapRGB(pf, r, g, b);
+#endif
+    if (!used[x + y * window_width]++)
+        pending[pending_n++] = (SDL_Point){x,y};
 }
 
 SDL_Window *window = NULL;
@@ -103,16 +106,35 @@ static void change(void)
 }
 #endif
 
+static bool step = true;
+
+static int samples_per_pixel = 1;
+
+void change(void)
+{
+    memset(canvas.pixels, 0, sizeof (pixel) * window_width * window_height);
+    memset(used, 0, sizeof (bool) * window_width * window_height);
+    pending_n = 0;
+    camera.samples_per_pixel = samples_per_pixel;
+    camera_init(&camera);
+    step = true;
+}
+
 static void setup(int i)
 {
     camera = scenes[i].camera;
-    camera.samples_per_pixel = 1;
+    camera.samples_per_pixel = samples_per_pixel;
     camera.image_width = window_width;
     camera.desired_aspect_ratio = window_width / (dist)window_height;
     camera.log = false;
     camera.set_pixel = set_pixel;
     camera.world = &scenes[i].world;
-    camera_init(&camera);
+    camera.udata = NULL;
+
+    camera.defocus_angle = 0;
+    camera.max_depth = 20;
+
+    change();
 
     {
         union vec3 forward = unit(sub(camera.lookat, camera.lookfrom));
@@ -121,29 +143,36 @@ static void setup(int i)
     }
 }
 
-static bool step = true;
 static bool is_linear = true;
 static bool is_horizontal = true;
 
 static void render(void)
 {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 1);
+    SDL_RenderClear(renderer);
+
     if (step)
     {
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 1);
-        SDL_RenderClear(renderer);
-
-        void *pixels = NULL;
-        TRY(SDL_LockTexture(texture, NULL, &pixels, &pitch));
-        memset(pixels, 0, pitch * window_height); 
-        camera.udata = pixels;
-
         #define DESIRED_FRAME 1000 / (dist)24
         uint64_t timeout = SDL_GetTicks64() + DESIRED_FRAME;
         while (SDL_GetTicks64() < timeout)
             step = !(is_linear ? camera_step_linear : camera_step_random)(&camera, 100);
+    }
+
+        void *pixels = NULL;
+        TRY(SDL_LockTexture(texture, NULL, &pixels, &pitch));
+#if 0
+        memset(pixels, 0, pitch * window_height); 
+#endif
+
+        if (window_width * pf->BytesPerPixel == pitch)
+            (void)memcpy(pixels, canvas.pixels, pitch * window_height);
+        else for (int j = 0; j < window_height; j++)
+            (void)memcpy(((unsigned char *)(pixels)) + j * pitch, canvas.pixels + j * window_width, pitch);
 
         // Do some shit. lazy ass stupid bitch thing.
 
+    if (step && !is_linear) {
         if (is_horizontal)
             for (int j = 0; j < window_height; j++)
             {
@@ -184,35 +213,38 @@ static void render(void)
             }
         else // Do the radial
         {
-            for (; pending_i != pending_n; pending_i = (pending_i + 1) % (window_width * window_height))
+            static SDL_Point pending2[4000 * 4000];
+            static bool used2[4000 * 4000];
+            (void)memcpy(pending2, pending, pending_n * sizeof (SDL_Point));
+            (void)memcpy(used2, used, window_width * window_height);
+
+            for (
+                int pending_i = 0, pending_n2 = pending_n;
+                pending_i != pending_n2;
+                pending_i = (pending_i + 1) % (window_width * window_height))
             {
                 uint8_t r;
                 uint8_t g;
                 uint8_t b;
-                int x = pending[pending_i].x;
-                int y = pending[pending_i].y;
+                int x = pending2[pending_i].x;
+                int y = pending2[pending_i].y;
                 SDL_GetRGB(PIXEL_INDEX(pixels, x, y, pitch), pf, &r, &g, &b);
                 #define FILL(CMP, I, J) \
-                if ((CMP) && !used[(I) + (J)*window_width]++) \
+                if ((CMP) && !used2[(I) + (J)*window_width]++) \
                 {   PIXEL_INDEX(pixels,(I),(J),pitch) = SDL_MapRGB(pf,r,g,b); \
-                    pending[pending_n] = (SDL_Point){(I),(J)};                \
-                    pending_n = (pending_n+1) % (window_width*window_height); }
+                    pending2[pending_n2] = (SDL_Point){(I),(J)};                \
+                    pending_n2 = (pending_n2+1) % (window_width*window_height); }
                 FILL(x-1 >= 0, x-1, y)
                 FILL(x+1 < window_width, x+1, y)
                 FILL(y-1 >= 0, x, y-1)
                 FILL(y+1 < window_height, x, y+1)
                 #undef FILL
             }
-            // Lala
-            pending_i = 0;
-            pending_n = 0;
         }
-
-        memset(used, 0, sizeof (bool) * window_height * window_width);
-
-        SDL_UnlockTexture(texture);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
     }
+
+    SDL_UnlockTexture(texture);
+    SDL_RenderCopy(renderer, texture, NULL, NULL);
 
     SDL_RenderPresent(renderer);
 }
@@ -229,9 +261,10 @@ static void resize(SDL_Event event[static 1])
         window_width = event->window.data1;
         window_height = event->window.data2;
 
+#if 0
         memset(used, 0, sizeof (bool) * window_width * window_height);
-        pending_i = 0;
         pending_n = 0;
+#endif
 
         SDL_DestroyTexture(texture);
         TRY(!(texture = SDL_CreateTexture(renderer,
@@ -242,7 +275,7 @@ static void resize(SDL_Event event[static 1])
 #else
         camera.image_width = window_width;
         camera.desired_aspect_ratio = window_width / (dist)window_height;
-        camera_init(&camera);
+        change();
 #endif
         step = true;
     }
@@ -311,37 +344,42 @@ static void iter(void)
                     SDL_SetWindowMouseGrab(window, false);
 #endif
                 break;
-                case 'l': is_linear     = !is_linear;     break;
-                case 'h': is_horizontal = !is_horizontal; break;
+                case 'l': is_linear     = !is_linear;     change(); break;
+                case 'h': is_horizontal = !is_horizontal; change(); break;
+                case 'n': if (samples_per_pixel > 1) { samples_per_pixel--; change(); } break;
+                case 'm': if (samples_per_pixel < 100) { samples_per_pixel++; change(); } break;
                 case 'd':
                     camera.lookfrom = sum(camera.lookfrom, VEC3(-sin(yaw), 0, cos(yaw)));
                     camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
-                    camera_init(&camera);
+                    change();
                 break;
                 case 'a':
                     camera.lookfrom = sub(camera.lookfrom, VEC3(-sin(yaw), 0, cos(yaw)));
                     camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
-                    camera_init(&camera);
+                    change();
                 break;
                 case 'w':
                     camera.lookfrom = sum(camera.lookfrom, VEC3(cos(yaw), 0, sin(yaw)));
                     camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
-                    camera_init(&camera);
+                    change();
                 break;
                 case 's':
                     camera.lookfrom = sub(camera.lookfrom, VEC3(cos(yaw), 0, sin(yaw)));
                     camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
-                    camera_init(&camera);
+                    change();
                 break;
                 case SDLK_LSHIFT:
                     camera.lookfrom.y--;
                     camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
-                    camera_init(&camera);
+                    change();
                 break;
                 case SDLK_SPACE:
                     camera.lookfrom.y++;
                     camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
-                    camera_init(&camera);
+                    change();
+                break;
+                case 'r':
+                    change();
                 break;
                 case '1': setup(scene_i = 0); break;
                 case '2': setup(scene_i = 1); break;
@@ -360,7 +398,6 @@ static void iter(void)
             TRY(!(texture = SDL_CreateTexture(renderer,
                             pixel_format, SDL_TEXTUREACCESS_STREAMING,
                             window_width, window_height)));
-            setup(scene_i); step = true;
 	}
 	else if (SDL_MOUSEMOTION == event.type)
 	{
@@ -372,7 +409,7 @@ static void iter(void)
                 if (pitch_angle > 89) pitch_angle = 89;
                 else if (pitch_angle < -89) pitch_angle = -89;
                 camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
-                camera_init(&camera);
+                change();
             }
 	}
     }
