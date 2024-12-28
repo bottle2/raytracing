@@ -14,8 +14,8 @@ image.png:batch
 batch:$(OBJECT) batch.c
 	$(CC) $(CFLAGS) -o $@ batch.c $(OBJECT) $(LDLIBS)
 
-interactive:$(OBJECT) interactive.c
-	$(CC) $(CFLAGS) $$(pkg-config --cflags SDL2) -o $@ interactive.c $(OBJECT) $$(pkg-config --libs SDL2)
+interactive:$(OBJECT) canvas.c interactive.c
+	$(CC) $(CFLAGS) $$(pkg-config --cflags SDL2) -o $@ canvas.c interactive.c $(OBJECT) $$(pkg-config --libs SDL2)
 
 basic.h:precision.h
 	touch $@
@@ -24,6 +24,8 @@ batch.c:color.h scene.h
 camera.c:camera.h
 	touch $@
 camera.h:hittable.h
+	touch $@
+canvas.c:canvas.h util.h
 	touch $@
 color.h:vec3.h
 	touch $@

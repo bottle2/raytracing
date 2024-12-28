@@ -16,6 +16,7 @@ static bool is_playing = true;
 #endif
 
 #include "camera.h"
+#include "canvas.h"
 #include "color.h"
 #include "scene.h"
 #include "util.h"
@@ -23,22 +24,7 @@ static bool is_playing = true;
 
 static SDL_threadID tid;
 
-#ifndef BITS_PER_PIXEL
-#define BITS_PER_PIXEL 32
-#endif
-#if 32 == BITS_PER_PIXEL
-#define PIXEL_INDEX(PIXELS, I, J, PITCH) \
-	(((uint32_t *)(((unsigned char *)(PIXELS)) + (J) * (PITCH)))[(I)])
-#else
-#error Not implemented
-#endif
-
-#define TRY(IT) \
-if ((IT)) { SDL_LogError(SDL_LOG_CATEGORY_ERROR, __FILE__ ":%d: %s\n", __LINE__, SDL_GetError()); \
-            exit(EXIT_FAILURE); } else (void)0
-
 SDL_Renderer *renderer;
-uint32_t pixel_format = 0;
 SDL_Texture *texture = NULL;
 
 static int window_width  = 800;
@@ -48,8 +34,10 @@ static bool used[4000 * 4000] = {0};
 static SDL_Point pending[4000 * 4000] = {0};
 int pending_i = 0;
 int pending_n = 0;
-SDL_PixelFormat *pf = NULL;
 int pitch = -1;
+
+struct canvas canvas = {CANVAS_FILL_LINEAR, (pixel[4000*4000]){0}};
+static bool second_used[4000 * 4000] = {0};
 
 static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
 {
@@ -128,8 +116,8 @@ static void setup(int i)
 
     {
         union vec3 forward = unit(sub(camera.lookat, camera.lookfrom));
-        yaw = util_rad2deg(atan2(forward.z, forward.x));
-        pitch_angle = util_rad2deg(-asin(forward.y));
+        yaw = atan2(forward.z, forward.x);
+        pitch_angle = -asin(forward.y);
     }
 }
 
@@ -249,7 +237,14 @@ static void resize(SDL_Event event[static 1])
         TRY(!(texture = SDL_CreateTexture(renderer,
                         pixel_format, SDL_TEXTUREACCESS_STREAMING,
                         window_width, window_height)));
-        setup(scene_i); step = true;
+#if 0
+        setup(scene_i);
+#else
+        camera.image_width = window_width;
+        camera.desired_aspect_ratio = window_width / (dist)window_height;
+        camera_init(&camera);
+#endif
+        step = true;
     }
 
 }
@@ -292,7 +287,6 @@ static void iter(void)
         if (SDL_QUIT == event.type)
         {
             SDL_SetEventFilter(NULL, NULL);
-            SDL_FreeFormat(pf);
             SDL_DestroyTexture(texture);
             SDL_DestroyRenderer(renderer);
             SDL_DestroyWindow(window);
@@ -320,33 +314,33 @@ static void iter(void)
                 case 'l': is_linear     = !is_linear;     break;
                 case 'h': is_horizontal = !is_horizontal; break;
                 case 'd':
-                    camera.lookfrom = sum(camera.lookfrom, VEC3(-sin(util_deg2rad(yaw)), 0, cos(util_deg2rad(yaw))));
-                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera.lookfrom = sum(camera.lookfrom, VEC3(-sin(yaw), 0, cos(yaw)));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
                     camera_init(&camera);
                 break;
                 case 'a':
-                    camera.lookfrom = sub(camera.lookfrom, VEC3(-sin(util_deg2rad(yaw)), 0, cos(util_deg2rad(yaw))));
-                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera.lookfrom = sub(camera.lookfrom, VEC3(-sin(yaw), 0, cos(yaw)));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
                     camera_init(&camera);
                 break;
                 case 'w':
-                    camera.lookfrom = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), 0, sin(util_deg2rad(yaw))));
-                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera.lookfrom = sum(camera.lookfrom, VEC3(cos(yaw), 0, sin(yaw)));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
                     camera_init(&camera);
                 break;
                 case 's':
-                    camera.lookfrom = sub(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), 0, sin(util_deg2rad(yaw))));
-                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera.lookfrom = sub(camera.lookfrom, VEC3(cos(yaw), 0, sin(yaw)));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
                     camera_init(&camera);
                 break;
                 case SDLK_LSHIFT:
                     camera.lookfrom.y--;
-                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
                     camera_init(&camera);
                 break;
                 case SDLK_SPACE:
                     camera.lookfrom.y++;
-                    camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                    camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
                     camera_init(&camera);
                 break;
                 case '1': setup(scene_i = 0); break;
@@ -359,19 +353,8 @@ static void iter(void)
             keep:;
         }
         else if (SDL_MOUSEBUTTONDOWN == event.type && 1 == event.button.button)
-        {
-#if 0
-            SDL_ShowCursor(SDL_DISABLE);
-            SDL_SetWindowMouseGrab(window, true);
-	    // XXX I've read online that another option is to warp the
-	    // mouse to the center at the end of each frame or
-	    // something
-#else
             SDL_SetRelativeMouseMode(true);
-#endif
-        }
-#if 0
-	else if (SDL_RENDER_TARGETS_RESET == event.type || SDL_RENDER_DEVICE_RESET == event.type)
+	else if (SDL_RENDER_DEVICE_RESET == event.type)
 	{
             SDL_DestroyTexture(texture);
             TRY(!(texture = SDL_CreateTexture(renderer,
@@ -379,16 +362,16 @@ static void iter(void)
                             window_width, window_height)));
             setup(scene_i); step = true;
 	}
-#endif
 	else if (SDL_MOUSEMOTION == event.type)
 	{
             if (SDL_GetRelativeMouseMode())
             {
-                yaw += event.motion.xrel / 2;
-                pitch_angle += event.motion.yrel / 2;
+                yaw += util_deg2rad(event.motion.xrel / 2);
+		// TODO we should wrap around so as not to lose precision
+                pitch_angle += util_deg2rad(event.motion.yrel / 2);
                 if (pitch_angle > 89) pitch_angle = 89;
                 else if (pitch_angle < -89) pitch_angle = -89;
-                camera.lookat = sum(camera.lookfrom, VEC3(cos(util_deg2rad(yaw)), sin(util_deg2rad(-pitch_angle)), sin(util_deg2rad(yaw))));
+                camera.lookat = sum(camera.lookfrom, VEC3(cos(yaw), sin(-pitch_angle), sin(yaw)));
                 camera_init(&camera);
             }
 	}
@@ -427,17 +410,8 @@ int main(int argc, char *argv[])
 
     TRY(!(renderer = SDL_CreateRenderer(window, -1, 0)));
 
-    {
-        SDL_RendererInfo info = {0};
-        TRY(SDL_GetRendererInfo(renderer, &info));
-	SDL_Log("%s", info.name);
-        SDL_assert(info.num_texture_formats > 0);
-        // XXX We picking the first pixel format. But we should search
-        // for the best?
-        pixel_format = info.texture_formats[0];
-    }
+    canvas_setup(renderer);
 
-    TRY(!(pf = SDL_AllocFormat(pixel_format)));
     TRY(!(texture = SDL_CreateTexture(renderer,
                     pixel_format, SDL_TEXTUREACCESS_STREAMING,
                     window_width, window_height)));
