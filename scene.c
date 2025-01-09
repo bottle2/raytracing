@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (c) 2024 Bento Borges Schirmer 
+// SPDX-License-Identifier: MIT
+
 #define _USE_MATH_DEFINES
 #include <math.h>
 

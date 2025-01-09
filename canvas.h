@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (c) 2024 Bento Borges Schirmer 
+// SPDX-License-Identifier: MIT
+
 #ifndef CANVAS_H
 #define CANVAS_H
 

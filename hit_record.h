@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (c) 2024 Bento Borges Schirmer 
+// SPDX-License-Identifier: MIT
+
 #ifndef HIT_RECORD
 #define HIT_RECORD
 

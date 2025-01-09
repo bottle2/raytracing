@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (c) 2024 Bento Borges Schirmer 
+// SPDX-License-Identifier: MIT
+
 #ifndef SPHERE_H
 #define SPHERE_H
 

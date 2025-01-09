@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (c) 2024 Bento Borges Schirmer 
+// SPDX-License-Identifier: MIT
+
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -327,16 +330,14 @@ static void iter(void)
             LOOP_END;
             // TODO but will try to render something in the end BROKEN
         }
-        else if (SDL_WINDOWEVENT == event.type && (SDL_WINDOWEVENT_RESIZED == event.window.event
+        else
+		if (SDL_WINDOWEVENT == event.type && (SDL_WINDOWEVENT_RESIZED == event.window.event
                 || SDL_WINDOWEVENT_SIZE_CHANGED == event.window.event))
             resize(&event);
 	else if (SDL_KEYDOWN == event.type)
         {
             switch (event.key.keysym.sym)
             {
-                case 'q':
-                    TRY(SDL_PushEvent(&(SDL_Event){.type = SDL_QUIT}) < 0);
-                break;
                 case SDLK_ESCAPE:
                     SDL_SetRelativeMouseMode(false);
 #if 0
@@ -426,6 +427,8 @@ int main(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
+
     scenes_init();
 
     setup(2);
@@ -441,7 +444,7 @@ int main(int argc, char *argv[])
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
         window_width, window_height,
-        SDL_WINDOW_RESIZABLE
+        SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL
     )));
     // TODO Deal with Apple's high-DPI stuff.
 
