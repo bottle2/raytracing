@@ -8,10 +8,12 @@
 
 dist util_deg2rad(dist deg);
 
-// Returns a random real in [0,1). 
+// Returns a random real in (0,1).
+// TODO It was supposed to be [0,1).
 dist random01(void);
 
-// Returns a random real in [min,max). 
+// Returns a random real in (min,max).
+// TODO It was supposed to be [min,max).
 dist random_interval(dist min, dist max);
 
 #define UNCHECKED(...) (__VA_ARGS__)

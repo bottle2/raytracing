@@ -15,6 +15,8 @@ static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
     printf(COLOR_FMT "\n", (int)r, (int)g, (int)b);
 }
 
+bool is_parallel = false;
+
 int main(int argc, char *argv[])
 {
     scenes_init();

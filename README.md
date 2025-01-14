@@ -22,8 +22,9 @@ Run one of:
 
 Further configuration is done altering the Makefile.
 
-I use C11, particularly `_Generic` and anonymous aggregates, but I'm
-targeting C18 because I'm told it is a bugfix of C11.
+I use C11, particularly `_Generic`, `_Thread_local` and anonymous
+aggregates, but I'm targeting C18 because I'm told it is a bugfix of
+C11.
 
 Development occurs in [MSYS2](https://www.msys2.org/), so I dunno if the
 [`Makefile`](Makefile) or code is adequate in other environments.
@@ -35,12 +36,11 @@ problems. Most tests occur with a native Windows build.
 
 ## Code overview
 
-There are three main entry points:
+There are two main entry points:
 
 1. [`batch.c`](batch.c): relies only on standard library, printing
    [PPM](https://en.wikipedia.org/wiki/Netpbm)
 2. [`interactive.c`](interactive.c): the SDL2 graphical application
-3. [`simple.c`](simple.c): occasional experiments with SDL2
 
 The type `dist` is defined in [`precision.h`](precision.h), which is
 some real type, and we let `tgmath.h` pick the correct functions.
@@ -101,7 +101,8 @@ Essential:
 
 Other:
 
-- Basic parallelism with OpenMP
+- Implement `if` OpenMP clause in [`simpleomp.cpp`](simpleomp.cpp)
+- Fix non-parallel build (remove `is_parallel` and related controls)
 - Built-in option to save render without printing 
 - Cinematic camera for kiosk mode
 - Cross-compilation to macOS and Linux

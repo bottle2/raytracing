@@ -25,6 +25,8 @@ static bool is_playing = true;
 #include "util.h"
 #include "vec3.h"
 
+bool is_parallel = false;
+
 static SDL_threadID tid;
 
 SDL_Renderer *renderer;
@@ -34,25 +36,16 @@ static int window_width  = 800;
 static int window_height = 600;
 
 static bool used[4000 * 4000] = {0};
-static SDL_Point pending[4000 * 4000] = {0};
-int pending_n = 0;
 int pitch = -1;
 
 struct canvas canvas = {CANVAS_FILL_LINEAR, (pixel[4000*4000]){0}};
 
 static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
 {
-    if (x >= window_width || y >= window_height) return;
-#if 0
-    unsigned char *pipi = data;
-    pipi += x * pf->BytesPerPixel + y * pitch;
-    *(uint32_t *)pipi = SDL_MapRGB(pf, r, g, b);
-#else
     (void)data;
+    if (x >= window_width || y >= window_height) return;
     canvas.pixels[x + y * window_width] = SDL_MapRGB(pf, r, g, b);
-#endif
-    if (!used[x + y * window_width]++)
-        pending[pending_n++] = (SDL_Point){x,y};
+    used[x + y * window_width] = true;
 }
 
 SDL_Window *window = NULL;
@@ -117,7 +110,6 @@ void change(void)
 {
     memset(canvas.pixels, 0, sizeof (pixel) * window_width * window_height);
     memset(used, 0, sizeof (bool) * window_width * window_height);
-    pending_n = 0;
     camera.samples_per_pixel = samples_per_pixel;
     camera_init(&camera);
     step = true;
@@ -164,9 +156,6 @@ static void render(void)
 
         void *pixels = NULL;
         TRY(SDL_LockTexture(texture, NULL, &pixels, &pitch));
-#if 0
-        memset(pixels, 0, pitch * window_height); 
-#endif
 
         if (window_width * pf->BytesPerPixel == pitch)
             (void)memcpy(pixels, canvas.pixels, pitch * window_height);
@@ -216,33 +205,42 @@ static void render(void)
             }
         else // Do the radial
         {
-            static SDL_Point pending2[4000 * 4000];
+            static SDL_Point pending[4000 * 4000];
             static bool used2[4000 * 4000];
-            (void)memcpy(pending2, pending, pending_n * sizeof (SDL_Point));
+            int pending_n = 0;
             (void)memcpy(used2, used, window_width * window_height);
 
+            #define FILL(CMP, I, J) \
+            if ((CMP) && !used2[(I) + (J)*window_width]++) \
+            {   PIXEL_INDEX(pixels,(I),(J),pitch) = SDL_MapRGB(pf,r,g,b); \
+                pending[pending_n] = (SDL_Point){(I),(J)};                \
+                pending_n = (pending_n+1) % (window_width*window_height); }
+
+            #define FILL_4() do { \
+                uint8_t r, g, b; \
+                SDL_GetRGB(PIXEL_INDEX(pixels, x, y, pitch), pf, &r, &g, &b); \
+                FILL(x-1 >= 0, x-1, y) \
+                FILL(x+1 < window_width, x+1, y) \
+                FILL(y-1 >= 0, x, y-1) \
+                FILL(y+1 < window_height, x, y+1) } while (0)
+
+            for (int y = 0; y < window_height; y++)
+                for (int x = 0; x < window_width; x++)
+                    if (used[x + y * window_width])
+                        FILL_4();
+
             for (
-                int pending_i = 0, pending_n2 = pending_n;
-                pending_i != pending_n2;
-                pending_i = (pending_i + 1) % (window_width * window_height))
-            {
-                uint8_t r;
-                uint8_t g;
-                uint8_t b;
-                int x = pending2[pending_i].x;
-                int y = pending2[pending_i].y;
-                SDL_GetRGB(PIXEL_INDEX(pixels, x, y, pitch), pf, &r, &g, &b);
-                #define FILL(CMP, I, J) \
-                if ((CMP) && !used2[(I) + (J)*window_width]++) \
-                {   PIXEL_INDEX(pixels,(I),(J),pitch) = SDL_MapRGB(pf,r,g,b); \
-                    pending2[pending_n2] = (SDL_Point){(I),(J)};                \
-                    pending_n2 = (pending_n2+1) % (window_width*window_height); }
-                FILL(x-1 >= 0, x-1, y)
-                FILL(x+1 < window_width, x+1, y)
-                FILL(y-1 >= 0, x, y-1)
-                FILL(y+1 < window_height, x, y+1)
-                #undef FILL
+                int pending_i = 0;
+                pending_i != pending_n;
+                pending_i = (pending_i + 1) % (window_width * window_height)
+            ) {
+                int x = pending[pending_i].x;
+                int y = pending[pending_i].y;
+                FILL_4();
             }
+
+            #undef FILL_4
+            #undef FILL
         }
     }
 
@@ -253,21 +251,16 @@ static void render(void)
 }
 
 // TODO WTF how about realloc HMMM ?
-static void resize(SDL_Event event[static 1])
+static void resize(int width, int height)
 {
-    SDL_assert(SDL_WINDOWEVENT == event->type);
-    SDL_assert(SDL_WINDOWEVENT_RESIZED == event->window.event
-            || SDL_WINDOWEVENT_SIZE_CHANGED == event->window.event);
-
-    if (window_width != event->window.data1 || window_height != event->window.data2)
+    int w;
+    int h;
+    SDL_GetRendererOutputSize(renderer, &w, &h);
+    SDL_Log("called once %d %d %d %d\n", width, height, w, h);
+    if (window_width != width || window_height != height)
     {
-        window_width = event->window.data1;
-        window_height = event->window.data2;
-
-#if 0
-        memset(used, 0, sizeof (bool) * window_width * window_height);
-        pending_n = 0;
-#endif
+        window_width = width;
+        window_height = height;
 
         SDL_DestroyTexture(texture);
         TRY(!(texture = SDL_CreateTexture(renderer,
@@ -303,7 +296,7 @@ static int filter(void *userdata, SDL_Event *event)
             case SDL_WINDOWEVENT_SIZE_CHANGED:
                 if (SDL_GetThreadID(NULL) == tid)
                 {
-                    resize(event);
+                    resize(event->window.data1, event->window.data2);
                     return 0;
                 }
             break;
@@ -333,9 +326,10 @@ static void iter(void)
         else
 		if (SDL_WINDOWEVENT == event.type && (SDL_WINDOWEVENT_RESIZED == event.window.event
                 || SDL_WINDOWEVENT_SIZE_CHANGED == event.window.event))
-            resize(&event);
+            resize(event.window.data1, event.window.data2);
 	else if (SDL_KEYDOWN == event.type)
         {
+            void omp_set_num_threads(int);
             switch (event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
@@ -385,7 +379,16 @@ static void iter(void)
                 case '1': setup(scene_i = 0); break;
                 case '2': setup(scene_i = 1); break;
                 case '3': setup(scene_i = 2); break;
-                case 'p': SDL_Log("%.3f %.3f", yaw, pitch_angle); break;
+                case 'p':
+                    SDL_Log("%.3f %.3f", yaw, pitch_angle);
+                    #pragma omp parallel
+                    {
+                    int omp_get_num_threads(void);
+                    SDL_Log("%d\n", omp_get_num_threads());
+                    }
+                break;
+                case 't': is_parallel = true; break;
+                case 'y': is_parallel = false; break;
                 default: goto keep; break;
             }
             step = true;
@@ -434,6 +437,10 @@ int main(int argc, char *argv[])
     setup(2);
 
     atexit(SDL_Quit);
+
+    int omp_get_max_threads(void);
+    void omp_set_num_threads(int);
+    omp_set_num_threads(omp_get_max_threads());
 
     TRY(SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS));
 

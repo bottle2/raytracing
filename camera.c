@@ -67,88 +67,89 @@ void camera_init(struct camera *camera) {
     // State machine stuff.
     camera->i = 0;
     camera->j = 0;
-    camera->sample = 0;
 }
+
+static void eval_pixel(struct camera camera[static 1], int i, int j)
+{
+    union vec3 pixel_color = COLOR(0,0,0);
+
+    for (int s = 0; s < camera->samples_per_pixel; s++)
+    {
+        struct ray r = get_ray(camera, i, j);
+        pixel_color = sum(
+            pixel_color,
+            ray_color(r, camera->max_depth, camera->world)
+        );
+    }
+
+    camera->set_pixel(camera->udata, i, j,
+        COLOR_BLOW(pixel_color, camera->samples_per_pixel)
+    );
+}
+
+extern bool is_parallel;
 
 bool camera_step_linear(struct camera camera[static 1], int n)
 {
-    for (; camera->j < camera->image_height; camera->j++)
+    int i_0 = camera->i;
+    int j_0 = camera->j;
+    int width = camera->image_width;
+
     {
-        if (camera->log)
-            fprintf(stderr, "Scanlines remaining: %d\n", camera->image_height - camera->j);
-
-        for (; camera->i < camera->image_width; camera->i++)
-        {
-            if (0 == camera->sample)
-                camera->pixel_color = VEC3(0,0,0);
-
-            for (; camera->sample < camera->samples_per_pixel; camera->sample++)
-            {
-                if (0 == n)
-                    return false;
-                else if (n > 0)
-                    n--;
-
-                struct ray r = get_ray(camera, camera->i, camera->j);
-                camera->pixel_color = sum(
-                    camera->pixel_color,
-                    ray_color(r, camera->max_depth, camera->world)
-                );
-            }
-
-	    camera->sample = 0;
-
-            camera->set_pixel(
-                camera->udata,
-                camera->i,
-                camera->j,
-                COLOR_BLOW(camera->pixel_color, camera->samples_per_pixel)
-            );
-        }
-
-	camera->i = 0;
+        int left = width * (camera->image_height - j_0) - i_0;
+        if (left < n)
+            n = left;
     }
 
-    return true;
+    #define OFFSET_I(O)        ((i_0 + (O)) % width)
+    #define OFFSET_J(O) (j_0 + ((i_0 + (O)) / width))
+    #define OFFSET_I_J(O) OFFSET_I((O)), OFFSET_J((O))
+
+    if (is_parallel)
+        #pragma omp parallel for //if(is_parallel)
+        for (int k = 0; k < n; k++)
+            eval_pixel(camera, OFFSET_I_J(k));
+    else
+        for (int k = 0; k < n; k++)
+            eval_pixel(camera, OFFSET_I_J(k));
+
+    camera->i = OFFSET_I(n);
+    camera->j = OFFSET_J(n);
+
+    return 0 == camera->i && camera->j == camera->image_height;
 }
 
-// XXX Code copied from `camera_step_linear`, kinda sus.
+static inline int slice(int height)
+{
+    int omp_get_thread_num(void);
+    int omp_get_num_threads(void);
+
+    int i = omp_get_thread_num();
+    int n = omp_get_num_threads();
+    int offset = height / n;
+
+    return random_interval(offset*i, i==n-1 ? height : offset*(i+1));
+}
+
 bool camera_step_random(struct camera camera[static 1], int n)
 {
+    (void)camera;
+
     assert(n >= 0);
 
-    while (n > 0)
-    {
-        if (0 == camera->sample)
-        {
-            camera->i = random01() * camera->image_width; 
-            camera->j = random01() * camera->image_height; 
-            camera->pixel_color = VEC3(0,0,0);
-        }
-
-        for (; camera->sample < camera->samples_per_pixel; camera->sample++)
-        {
-            if (0 == n)
-                return false;
-            else
-                n--;
-
-            struct ray r = get_ray(camera, camera->i, camera->j);
-            camera->pixel_color = sum(
-                camera->pixel_color,
-                ray_color(r, camera->max_depth, camera->world)
+    if (is_parallel)
+        #pragma omp parallel for //if(is_parallel)
+        for (int k = 0; k < n; k++)
+            eval_pixel(camera,
+                    random_interval(0, camera->image_width),
+                    slice(camera->image_height)
             );
-        }
-
-        camera->set_pixel(
-            camera->udata,
-            camera->i,
-            camera->j,
-            COLOR_BLOW(camera->pixel_color, camera->samples_per_pixel)
-        );
-
-        camera->sample = 0;
-    }
+    else
+        for (int k = 0; k < n; k++)
+            eval_pixel(camera,
+                    random_interval(0, camera->image_width),
+                    random_interval(0, camera->image_height)
+            );
 
     return false;
 }

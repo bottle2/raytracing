@@ -46,8 +46,6 @@ struct camera
 
     int i;
     int j;
-    int sample;
-    union vec3 pixel_color;
 };
 
 void camera_init(struct camera *camera);

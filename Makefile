@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (C) 2024 Bento Borges Schirmer 
 # SPDX-License-Identifier: MIT
 
-CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -O3 -march=native -flto
+CFLAGS=-std=c18 -fopenmp -Wpedantic -Wall -Wextra -O3 -march=native -flto
 #CC=zig cc
 #CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -g3 -fsanitize=undefined,address
 #CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -g3
@@ -9,6 +9,7 @@ OBJECT=camera.o hit_record.o hittable.o interval.o material.o ray.o scene.o sphe
 LDLIBS=
 
 SOKOL=https://raw.githubusercontent.com/floooh/sokol-samples/d91015d455409f20fc1b376fae1b29e0cce1e9ef
+TENCENT_NCNN=https://raw.githubusercontent.com/Tencent/ncnn/9e11dac7d17aae3c600d30de471b57478459a624
 
 TARGET=batch interactive
 
@@ -55,19 +56,24 @@ tags:
 	ctags *.c *.h
 	ctags -a -R --c-kinds=dept "$$(sdl2-config --prefix)/include/SDL2"
 
-#EMSCRIPTEN_FLAGS=-gsource-map -g3 -Og -fsanitize=address,undefined
-EMSCRIPTEN_FLAGS=-DSDL_ASSERT_LEVEL=0 -Oz -flto
+#EMSCRIPTEN_FLAGS=-gsource-map -g3 -Og -fsanitize=address,undefined -fopenmp -pthread
+EMSCRIPTEN_FLAGS= -Oz -flto -fopenmp -pthread
 
-raytracing.zip:
+raytracing.zip:interactive.c simpleomp.o
 	emcc -std=c18 -DM_PI=3.14159265358979323846 \
-		$(EMSCRIPTEN_FLAGS) \
-		-sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=655360000  \
-		$$(find . -name '*.c' ! -name batch.c ! -name simple.c) \
+		-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency $(EMSCRIPTEN_FLAGS) \
+		-sINITIAL_MEMORY=655360000  \
+		$$(find . -name '*.c' ! -name batch.c) simpleomp.o \
 		--use-port=sdl2 -o index.html --shell-file=shell.html
 	7z a raytracing.zip index.{html,js,wasm}
 
+simpleomp.o:simpleomp.cpp cpu.h platform.h simpleomp.h
+	em++ -DNCNN_SIMPLEOMP=1 $(EMSCRIPTEN_FLAGS) -c $<
+
 shell.html:
-	curl $(SOKOL)/webpage/shell.html
+	curl $(SOKOL)/webpage/shell.html > $@
+simpleomp.cpp:
+	curl $(TENCENT_NCNN)/src/simpleomp.cpp > $@
 
 ACKNOWLEDGMENTS:ACKNOWLEDGMENTS.m4
 	m4 -DSOKOL='$(SOKOL)' $< > $@
