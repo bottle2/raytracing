@@ -154,6 +154,8 @@ bool camera_step_random(struct camera camera[static 1], int n)
     return false;
 }
 
+bool is_uv = false;
+
 static union vec3 ray_color(struct ray ray, int depth, struct hittable *world)
 {
     if (depth <= 0)
@@ -163,6 +165,9 @@ static union vec3 ray_color(struct ray ray, int depth, struct hittable *world)
 
     if (hittable_hit(world, ray, INTERVAL(0.001, HUGE_VAL), &rec))
     {
+        if (is_uv)
+            return mul(0.5, sum(rec.normal, 1));
+
         struct ray scattered;
         union vec3 attenuation;
 

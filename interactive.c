@@ -389,6 +389,13 @@ static void iter(void)
                 break;
                 case 't': is_parallel = true; break;
                 case 'y': is_parallel = false; break;
+		case 'u':
+                {
+                    extern bool is_uv;
+                    is_uv = !is_uv;
+                    change();
+                }
+                break;
                 default: goto keep; break;
             }
             step = true;

@@ -92,7 +92,6 @@ Essential:
 - Add an interactive HUD
 - Mobile control
 - FPS measurement and display
-- UV visualization
 - Finish keyboard control
 - Reliable mouse ungrab in HTML5
 - Physics based movement
