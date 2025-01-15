@@ -3,8 +3,8 @@
 
 CFLAGS=-std=c18 -fopenmp -Wpedantic -Wall -Wextra -O3 -march=native -flto
 #CC=zig cc
-#CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -g3 -fsanitize=undefined,address
-#CFLAGS=-std=c18 -Wpedantic -Wall -Wextra -g3
+#CFLAGS=-std=c18 -fopenmp -Wpedantic -Wall -Wextra -g3 -fsanitize=undefined,address
+#CFLAGS=-std=c18 -fopenmp -Wpedantic -Wall -Wextra -g3
 OBJECT=camera.o hit_record.o hittable.o interval.o material.o ray.o scene.o sphere.o util.o vec3.o
 LDLIBS=
 
@@ -22,7 +22,7 @@ batch:$(OBJECT) batch.c
 	$(CC) $(CFLAGS) -o $@ batch.c $(OBJECT) $(LDLIBS)
 
 interactive:$(OBJECT) canvas.c interactive.c
-	$(CC) $(CFLAGS) $$(pkg-config --cflags SDL2) -o $@ canvas.c interactive.c $(OBJECT) -L/clang64/lib/ $$(pkg-config --libs SDL2)
+	$(CC) $(CFLAGS) $$(pkg-config --cflags SDL2) -o $@ canvas.c interactive.c $(OBJECT) $$(pkg-config --libs SDL2)
 
 basic.h:precision.h
 	touch $@
@@ -62,7 +62,8 @@ EMSCRIPTEN_FLAGS= -Oz -flto -fopenmp -pthread
 raytracing.zip:interactive.c simpleomp.o
 	emcc -std=c18 -DM_PI=3.14159265358979323846 \
 		-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency $(EMSCRIPTEN_FLAGS) \
-		-sINITIAL_MEMORY=655360000  \
+		-sINITIAL_MEMORY=655360000 \
+		-DLIMIT_WIDTH=4000 -DLIMIT_HEIGHT=3000 \
 		$$(find . -name '*.c' ! -name batch.c) simpleomp.o \
 		--use-port=sdl2 -o index.html --shell-file=shell.html
 	7z a raytracing.zip index.{html,js,wasm}

@@ -100,6 +100,7 @@ Essential:
 
 Other:
 
+- Improve resizing efficiency
 - Implement `if` OpenMP clause in [`simpleomp.cpp`](simpleomp.cpp)
 - Fix non-parallel build (remove `is_parallel` and related controls)
 - Built-in option to save render without printing 

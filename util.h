@@ -17,12 +17,19 @@ dist random01(void);
 dist random_interval(dist min, dist max);
 
 #define UNCHECKED(...) (__VA_ARGS__)
+#define KLUDGE(...) (__VA_ARGS__)
 #define NIL
 
-#define TRY(IT) if ((IT)) { \
+#define TRY_(IT, STR) if ((IT)) { \
     SDL_LogError( \
         SDL_LOG_CATEGORY_ERROR, \
-        __FILE__ ":%d: %s\n", __LINE__, SDL_GetError() \
+        __FILE__ ":%d: %s\n", __LINE__, (STR) \
     ); exit(EXIT_FAILURE); } else (void)0
+
+#define TRY( IT) TRY_((IT), SDL_GetError())
+#define TRYE(IT) TRY_((IT), strerror(errno))
+// E as in errno
+
+#define MIN(A, B) ((A) < (B) ? (A) : (B))
 
 #endif

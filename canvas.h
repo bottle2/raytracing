@@ -19,6 +19,9 @@ typedef uint32_t pixel;
 #error Not implemented
 #endif
 
+#define CANVAS_XS \
+X(pixel, pixels, 1); X(bool, used, 2); X(SDL_Point, pending, 1)
+
 struct canvas
 {
     enum canvas_fill
@@ -29,15 +32,24 @@ struct canvas
         CANVAS_FILL_RANDOM_HORIONTAL = 6,
         CANVAS_FILL_RANDOM_FLOOD = 10,
     } fill;
-    pixel *pixels;
+    #define X(T, N, M) T *N
+    CANVAS_XS;
+    #undef X
+    bool *used2;
+    SDL_Texture *texture;
 };
 
-extern uint32_t pixel_format;
 extern SDL_PixelFormat *pf;
+extern int max_width;
+extern int max_height;
 // These are undefined before calling `canvas_setup`.
 // These are freed automatically `atexit`.
 
 // MUST be called AFTER `atexit(SDL_Quit)`.
 void canvas_setup(SDL_Renderer *renderer);
+
+void canvas_init(struct canvas[static 1], SDL_Renderer *);
+void canvas_end (struct canvas[static 1]);
+void canvas_create_texture(struct canvas[static 1], SDL_Renderer *);
 
 #endif
