@@ -15,8 +15,8 @@
 // I took what I needed for simpleomp from:
 // https://raw.githubusercontent.com/Tencent/ncnn/9e11dac7d17aae3c600d30de471b57478459a624/src/cpu.h
 
-#ifndef TITS
-#define TITS
+#ifndef NCNN_CPU_H
+#define NCNN_CPU_H
 
 #ifndef __EMSCRIPTEN__
 #error This is Emscripten specific!
