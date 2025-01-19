@@ -11,6 +11,10 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
+#ifndef USER_FULLSCREEN
+#error Define to either SDL_WINDOW_FULLSCREEN or SDL_WINDOW_FULLSCREEN_DESKTOP
+#endif
+
 #define LOOP(ITER) emscripten_set_main_loop((ITER), 0, 1)
 #define LOOP_END emscripten_cancel_main_loop(); return
 #else
@@ -19,6 +23,7 @@ static bool is_playing = true;
 #define LOOP_END is_playing = false; return
 #endif
 
+#include "benchmark.h"
 #include "camera.h"
 #include "canvas.h"
 #include "color.h"
@@ -58,15 +63,11 @@ int scene_i = 2;
 
 static dist yaw = 0; // Degrees. Look to your left and right
 static dist pitch_angle = 0; // Degrees. Look upwards downwards
-#if 0
-static int framerates[] = {6, 12, 24, 30, 60, 90, 120, 144};
-static int framerate_i = 0;
-static int framerate = 12;
-#endif
 
-// TODO we have to add physics, framerate independent motion and configuration
-// that is, if it is lagging, settings are changed independently from
-// framerate
+static int framerates[] = {6, 12, 24, 30, 60, 90, 120, 144};
+static int const n_framerate = sizeof (framerates) / sizeof (*framerates);
+static int framerate_i = 3;
+static dist framerate = 1000 / (dist)24;
 
 struct user
 {
@@ -74,36 +75,6 @@ struct user
     union vec3 looking;
     int framerate;
 };
-
-#if 0
-static void change(void)
-{
-#if 0
-    camera.vfov = 90;
-    camera.samples_per_pixel = 10;
-    camera.max_depth = 10;
-#endif
-#if 0
-    camera.udata = surface;
-#endif
-
-#if 0
-    union vec3 forward = sub(camera.lookat, camera.lookfrom);
-
-    {
-        dist new_x = forward.x * cos(yaw) - forward.z * sin(yaw);
-        dist new_z = forward.x * sin(yaw) - forward.z * cos(yaw);
-        forward.x = new_x;
-        forward.z = new_z;
-    }
-#endif
-
-#if 0
-    camera.lookat = @;
-#endif
-
-}
-#endif
 
 static bool step = true;
 
@@ -151,10 +122,11 @@ static void render(void)
 
     if (step)
     {
-        #define DESIRED_FRAME 1000 / (dist)24
-        uint64_t timeout = SDL_GetTicks64() + DESIRED_FRAME;
-        while (SDL_GetTicks64() < timeout)
+        uint64_t timeout = SDL_GetTicks64() + framerate;
+        while (SDL_GetTicks64() < timeout && step)
             step = !(is_linear ? camera_step_linear : camera_step_random)(&camera, 100);
+
+        (step ? benchmark_frame : benchmark_done)(SDL_GetTicks64());
     }
 
     int pitch;
@@ -317,14 +289,47 @@ static void iter(void)
 	else if (SDL_KEYDOWN == event.type)
         {
             void omp_set_num_threads(int);
+            static bool is_fullscreen = false;
             switch (event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    SDL_SetRelativeMouseMode(false);
+                    if (!is_fullscreen)
+                        SDL_SetRelativeMouseMode(false);
+                    else
+                    {
+                        SDL_SetWindowFullscreen(window, 0);
+                        is_fullscreen = false;
+                    }
 #if 0
                     SDL_ShowCursor(SDL_ENABLE);
                     SDL_SetWindowMouseGrab(window, false);
 #endif
+                break;
+                case 'f':
+                fullscreen:
+                {
+                    SDL_DisplayMode dm;
+                    SDL_GetDisplayMode(0, 0, &dm);
+                    SDL_SetWindowDisplayMode(window, &dm);
+                }
+                    SDL_SetWindowFullscreen(window, USER_FULLSCREEN);
+                    is_fullscreen = true;
+                break;
+                case 'b':
+                    #define BENCHMARK_SAMPLES 10
+                    samples_per_pixel = BENCHMARK_SAMPLES;
+                    is_linear = true;
+                    benchmark_start(SDL_GetTicks64());
+                    goto fullscreen;
+                break;
+
+                case 'c':
+                    if (framerate_i > 0)
+                        framerate = 1000 / (dist)framerates[--framerate_i];
+                break;
+                case 'v':
+                    if (framerate_i < n_framerate - 1)
+                        framerate = 1000 / (dist)framerates[++framerate_i];
                 break;
                 case 'l': is_linear     = !is_linear;     change(); break;
                 case 'h': is_horizontal = !is_horizontal; change(); break;
@@ -367,6 +372,7 @@ static void iter(void)
                 case '2': setup(scene_i = 1); break;
                 case '3': setup(scene_i = 2); break;
                 case 'p':
+                    SDL_Log("framrate is %d\n", framerates[framerate_i]);
                     SDL_Log("%.3f %.3f", yaw, pitch_angle);
                     SDL_Log("%d %d %d %d %d %d\n", pad_x, pad_y, output_width, output_height, window_width, window_height);
                     #pragma omp parallel
@@ -456,6 +462,8 @@ int main(int argc, char *argv[])
     setup(2);
 
     SDL_SetEventFilter(filter, NULL);
+
+    benchmark_reset = change;
 
     LOOP(iter);
 

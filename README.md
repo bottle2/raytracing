@@ -96,10 +96,10 @@ Essential:
 - Reliable mouse ungrab in HTML5
 - Physics based movement
 - Branding
-- Benchmark option
 
 Other:
 
+- Code is spaghetti
 - Improve resizing efficiency
 - Implement `if` OpenMP clause in [`simpleomp.cpp`](simpleomp.cpp)
 - Fix non-parallel build (remove `is_parallel` and related controls)
@@ -112,7 +112,7 @@ Other:
 - Sharing scenes as platform-specific user creations
 - More shapes, such quadric surfaces
 - Leverage some existing math library rather than NIH syndrome 
-- More types such as unit vector
+- More types such as unit vector or measurement-aware reals
 - Better Makefile
 
 Geometry math expressions are to be simplified by employing ordinary

@@ -12,7 +12,7 @@
 #include "vec3.h"
 #include "util.h"
 
-struct scene scenes[3] = {0};
+struct scene scenes[N_SCENE] = {0};
 
 void scenes_init(void)
 {

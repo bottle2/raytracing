@@ -60,3 +60,7 @@ SHIRLEY, Peter; BLACK, Trevor David; HOLLASCH, Steve.
 2024. "Ray Tracing in One Weekend". [online]. Available at:
 <https://raytracing.github.io/books/raytracinginoneweekend.html>.
 Access at: April 2024.
+
+THATAM, Simon. 2000. "Coroutines in C". [online]. Available at:
+<https://www.chiark.greenend.org.uk/~sgtatham/coroutines.html>.
+Access at: January 2025.

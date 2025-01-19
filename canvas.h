@@ -21,6 +21,7 @@ typedef uint32_t pixel;
 
 #define CANVAS_XS \
 X(pixel, pixels, 1); X(bool, used, 2); X(SDL_Point, pending, 1)
+// TODO I think `pending` can be smaller
 
 struct canvas
 {
