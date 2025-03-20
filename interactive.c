@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -23,6 +24,12 @@ static bool is_playing = true;
 #define LOOP_END is_playing = false; return
 #endif
 
+#ifdef __STDC_NO_ATOMICS__
+#error We are fucked.
+#endif
+
+_Static_assert(2 == ATOMIC_CHAR_LOCK_FREE, "Fuck no atomic char");
+
 #include "benchmark.h"
 #include "camera.h"
 #include "canvas.h"
@@ -31,7 +38,54 @@ static bool is_playing = true;
 #include "util.h"
 #include "vec3.h"
 
+enum STATE { STATE_RUN, STATE_STOP, STATE_DIE };
+char _Atomic state;
+
 bool is_parallel = false;
+
+// XXX
+// Yeah.
+// se trancado, então pintor tá rodando
+// se destrancou, então dormiu e tá esperando condição
+// estado só se aplica enquanto tá pintando, são mensagens.
+// quando acorda, precisa estar tudo definido, coisa inválida inaceitável
+
+SDL_cond *go;
+SDL_mutex *hold;
+static int painter(void *data)
+{
+    (void)data;
+
+    TRY(-1 == SDL_LockMutex(hold));
+
+    while (1)
+    {
+        for (int i = 0; i < 100; i++)
+        {
+            switch (state)
+            {
+                case STATE_RUN:  /* Do nothing. */   break;
+                case STATE_STOP: goto done;          break;
+                case STATE_DIE:  goto finish;        break;
+                default:         assert(!"invalid"); break;
+            }
+
+            SDL_Log("working %d\n", i);
+            SDL_Delay(50);
+        }
+done:   SDL_Log("sleeping...\n");
+        SDL_CondWait(go, hold);
+        SDL_Log("woke up!\n");
+    }
+finish:
+    SDL_Log("dying...\n");
+
+    TRY(-1 == SDL_UnlockMutex(hold));
+    SDL_DestroyCond(go);
+    SDL_DestroyMutex(hold);
+
+    return 0;
+}
 
 static SDL_threadID tid;
 
@@ -67,7 +121,8 @@ static dist pitch_angle = 0; // Degrees. Look upwards downwards
 static int framerates[] = {6, 12, 24, 30, 60, 90, 120, 144};
 static int const n_framerate = sizeof (framerates) / sizeof (*framerates);
 static int framerate_i = 3;
-static dist framerate = 1000 / (dist)24;
+static dist framerate = 1000 / (dist)30;
+int work = 100;
 
 struct user
 {
@@ -89,6 +144,8 @@ void change(void)
     step = true;
 }
 
+int depth = 20;
+
 static void setup(int i)
 {
     camera = scenes[i].camera;
@@ -100,8 +157,10 @@ static void setup(int i)
     camera.world = &scenes[i].world;
     camera.udata = NULL;
 
+#if 0
     camera.defocus_angle = 0;
-    camera.max_depth = 20;
+#endif
+    camera.max_depth = depth;
 
     change();
 
@@ -122,9 +181,10 @@ static void render(void)
 
     if (step)
     {
+        int omp_get_num_threads(void);
         uint64_t timeout = SDL_GetTicks64() + framerate;
         while (SDL_GetTicks64() < timeout && step)
-            step = !(is_linear ? camera_step_linear : camera_step_random)(&camera, 100);
+            step = !(is_linear ? camera_step_linear : camera_step_random)(&camera, work);
 
         (step ? benchmark_frame : benchmark_done)(SDL_GetTicks64());
     }
@@ -277,7 +337,13 @@ static void iter(void)
     {
         if (SDL_QUIT == event.type)
         {
+            state = STATE_DIE;
+            TRY(-1 == SDL_LockMutex(hold)); // wait
+            TRY(-1 == SDL_UnlockMutex(hold)); // okay
+            TRY(SDL_CondSignal(go) != 0);
+
             canvas_end(&canvas);
+
             SDL_DestroyRenderer(renderer);
             SDL_DestroyWindow(window);
             SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
@@ -316,8 +382,9 @@ static void iter(void)
                     is_fullscreen = true;
                 break;
                 case 'b':
-                    #define BENCHMARK_SAMPLES 10
+                    #define BENCHMARK_SAMPLES 500
                     samples_per_pixel = BENCHMARK_SAMPLES;
+		    depth = 50;
                     is_linear = true;
                     benchmark_start(SDL_GetTicks64());
                     goto fullscreen;
@@ -330,6 +397,9 @@ static void iter(void)
                 case 'v':
                     if (framerate_i < n_framerate - 1)
                         framerate = 1000 / (dist)framerates[++framerate_i];
+                break;
+                case 'z': if (work > 10) work -= 10; break;
+                case 'x': if (work < 100) work += 10; break;
                 break;
                 case 'l': is_linear     = !is_linear;     change(); break;
                 case 'h': is_horizontal = !is_horizontal; change(); break;
@@ -372,7 +442,7 @@ static void iter(void)
                 case '2': setup(scene_i = 1); break;
                 case '3': setup(scene_i = 2); break;
                 case 'p':
-                    SDL_Log("framrate is %d\n", framerates[framerate_i]);
+                    SDL_Log("framrate is %d and work is %d\n", framerates[framerate_i], work);
                     SDL_Log("%.3f %.3f", yaw, pitch_angle);
                     SDL_Log("%d %d %d %d %d %d\n", pad_x, pad_y, output_width, output_height, window_width, window_height);
                     #pragma omp parallel
@@ -393,6 +463,28 @@ static void iter(void)
                     extern bool is_uv;
                     is_uv = !is_uv;
                     change();
+                }
+                break;
+                case 'g':
+                    state = STATE_STOP;
+                break;
+                case 'i':
+                {
+                    // TODO this will be the thing that will reload scene for some reason.
+                    int cause;
+                    TRY(-1 == (cause = SDL_TryLockMutex(hold)));
+                    if (0 == cause)
+                    {
+                        // locked, is sleeping
+                        TRY(-1 == SDL_UnlockMutex(hold));
+                        state = STATE_RUN;
+                        TRY(SDL_CondSignal(go) != 0);
+                    }
+                    else
+                    {
+                        // is running
+                        ; // Do nothing.
+                    }
                 }
                 break;
                 default: goto keep; break;
@@ -431,6 +523,8 @@ int main(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
+    atomic_init(&state, STATE_RUN);
+
     SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
 
     scenes_init();
@@ -464,6 +558,18 @@ int main(int argc, char *argv[])
     SDL_SetEventFilter(filter, NULL);
 
     benchmark_reset = change;
+
+    SDL_Log("before cond\n");
+    TRY(!(go = SDL_CreateCond()));
+    SDL_Log("before mutex\n");
+    TRY(!(hold = SDL_CreateMutex()));
+    SDL_Thread *t;
+    SDL_Log("before create thread\n");
+    TRY(!(t = SDL_CreateThread(painter, "painter", NULL)));
+    SDL_Log("before deatach\n");
+    SDL_DetachThread(t);
+
+    SDL_Log("I'm alive\n");
 
     LOOP(iter);
 
