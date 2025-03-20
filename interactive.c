@@ -70,15 +70,24 @@ static int painter(void *data)
                 default:         assert(!"invalid"); break;
             }
 
+#if 0
             SDL_Log("working %d\n", i);
+#endif
             SDL_Delay(50);
         }
-done:   SDL_Log("sleeping...\n");
+done:  
+#if 0
+	SDL_Log("sleeping...\n");
+#endif
         SDL_CondWait(go, hold);
+#if 0
         SDL_Log("woke up!\n");
+#endif
     }
 finish:
+#if 0
     SDL_Log("dying...\n");
+#endif
 
     TRY(-1 == SDL_UnlockMutex(hold));
     SDL_DestroyCond(go);
@@ -135,7 +144,19 @@ static bool step = true;
 
 static int samples_per_pixel = 1;
 
+static enum action {ACTION_NONE, ACTION_CHANGE, ACTION_SETUP, ACTION_RESIZE} action = ACTION_NONE;
+// XXX readability/10
+int setup_param_1; // XXX Closur/10
+int resize_param_width;
+int resize_param_height;
+
 void change(void)
+{
+    state = STATE_STOP;
+    action = ACTION_CHANGE;
+}
+
+void change_old(void)
 {
     memset(canvas.pixels, 0, sizeof (pixel) * output_width * output_height);
     memset(canvas.used, 0, sizeof (bool) * output_width * output_height);
@@ -147,6 +168,13 @@ void change(void)
 int depth = 20;
 
 static void setup(int i)
+{
+    state = STATE_STOP;
+    action = ACTION_SETUP;
+    setup_param_1 = i;
+}
+
+static void setup_old(int i)
 {
     camera = scenes[i].camera;
     camera.samples_per_pixel = samples_per_pixel;
@@ -162,7 +190,7 @@ static void setup(int i)
 #endif
     camera.max_depth = depth;
 
-    change();
+    change_old();
 
     {
         union vec3 forward = unit(sub(camera.lookat, camera.lookfrom));
@@ -285,6 +313,14 @@ static void render(void)
 
 static void resize(int width, int height)
 {
+    state = STATE_STOP;
+    action = ACTION_RESIZE;
+    resize_param_width = width;
+    resize_param_height = height;
+}
+
+static void resize_old(int width, int height)
+{
     if (window_width != width || window_height != height)
     {
         window_width = width;
@@ -308,7 +344,7 @@ static void resize(int width, int height)
 
         camera.image_width = output_width;
         camera.desired_aspect_ratio = output_width / (dist)output_height;
-        change();
+        change_old();
         step = true;
     }
 }
@@ -511,6 +547,37 @@ static void iter(void)
 	}
     }
 
+    if (STATE_STOP == state)
+    {
+        int cause;
+        TRY(-1 == (cause = SDL_TryLockMutex(hold)));
+        if (0 == cause)
+        {
+            switch (action)
+            {
+                // locked, is sleeping
+                case ACTION_NONE:
+                    // XXX What do we do, again?
+                break;
+                case ACTION_CHANGE:
+                    change_old();
+                break;
+                case ACTION_SETUP:
+                    setup_old(setup_param_1);
+                break;
+                case ACTION_RESIZE:
+                    resize_old(resize_param_width, resize_param_height);
+                break;
+                default:
+                    assert(!"blown up, destroyed");
+                break;
+            }
+            TRY(-1 == SDL_UnlockMutex(hold));
+            state = STATE_RUN;
+            TRY(SDL_CondSignal(go) != 0);
+        }
+    }
+
     // XXX check if sdl has lalalal
     // XXX check if lock needed
     // XXX add fullscreen
@@ -553,7 +620,7 @@ int main(int argc, char *argv[])
     canvas_setup(renderer);
     canvas_init(&canvas, renderer);
 
-    setup(2);
+    setup_old(2);
 
     SDL_SetEventFilter(filter, NULL);
 
