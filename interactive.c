@@ -43,6 +43,9 @@ char _Atomic state;
 
 bool is_parallel = false;
 
+static struct camera camera;
+static bool is_linear = true;
+
 // XXX
 // Yeah.
 // se trancado, então pintor tá rodando
@@ -60,7 +63,76 @@ static int painter(void *data)
 
     while (1)
     {
-        for (int i = 0; i < 100; i++)
+        // Fuck headers. XXX FUCK
+        // fuck.........
+        void eval_pixel(struct camera camera[static 1], int i, int j);
+
+        if (is_linear)
+        {
+            if (!is_parallel)
+            {
+                for (int i = 0; i < camera.image_height; i++)
+                {
+                    for (int j = 0; j < camera.image_width; j++)
+                    {
+                        switch (state)
+                        {
+                            case STATE_RUN:  /* Do nothing. */   break;
+                            case STATE_STOP: goto done;          break;
+                            case STATE_DIE:  goto finish;        break;
+                            default:         assert(!"invalid"); break;
+                        }
+
+                        eval_pixel(&camera, i, j);
+                    }
+                }
+            }
+            else
+            {
+#ifdef __EMSCRIPTEN__
+                #pragma omp parallel for
+                for (int i = 0; i < camera.image_height; i++)
+                {
+                    for (int j = 0; j < camera.image_width; j++)
+                    {
+                        switch (state)
+                        {
+                            case STATE_RUN:  /* Do nothing. */   break;
+                            case STATE_STOP: goto skip;          break;
+                            case STATE_DIE:  goto skip;        break;
+                            default:         assert(!"invalid"); break;
+                        }
+
+                        eval_pixel(&camera, i, j);
+                    }
+skip:;
+                }
+#else
+                #pragma omp parallel for schedule(dynamic)
+                for (int i = 0; i < camera.image_height; i++)
+                {
+                    for (int j = 0; j < camera.image_width; j++)
+                    {
+                        switch (state)
+                        {
+                            case STATE_RUN:  /* Do nothing. */   break;
+                            case STATE_STOP: goto skip;          break;
+                            case STATE_DIE:  goto skip;        break;
+                            default:         assert(!"invalid"); break;
+                        }
+
+                        eval_pixel(&camera, i, j);
+                    }
+skip:;
+                }
+#endif
+                if (STATE_DIE == state)
+                    goto finish;
+            }
+        }
+
+#if 0
+        for (int i = 0; i < 1000; i++)
         {
             switch (state)
             {
@@ -69,13 +141,13 @@ static int painter(void *data)
                 case STATE_DIE:  goto finish;        break;
                 default:         assert(!"invalid"); break;
             }
-
 #if 0
             SDL_Log("working %d\n", i);
 #endif
-            SDL_Delay(50);
+            SDL_Delay(5);
         }
-done:  
+#endif
+done:
 #if 0
 	SDL_Log("sleeping...\n");
 #endif
@@ -121,7 +193,6 @@ static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
 
 SDL_Window *window = NULL;
 
-static struct camera camera;
 int scene_i = 2;
 
 static dist yaw = 0; // Degrees. Look to your left and right
@@ -144,7 +215,9 @@ static bool step = true;
 
 static int samples_per_pixel = 1;
 
-static enum action {ACTION_NONE, ACTION_CHANGE, ACTION_SETUP, ACTION_RESIZE} action = ACTION_NONE;
+static bool is_change = false;
+static bool is_setup = false;
+static bool is_resize = false;
 // XXX readability/10
 int setup_param_1; // XXX Closur/10
 int resize_param_width;
@@ -153,7 +226,7 @@ int resize_param_height;
 void change(void)
 {
     state = STATE_STOP;
-    action = ACTION_CHANGE;
+    is_change = true;
 }
 
 void change_old(void)
@@ -170,7 +243,7 @@ int depth = 20;
 static void setup(int i)
 {
     state = STATE_STOP;
-    action = ACTION_SETUP;
+    is_setup = true;
     setup_param_1 = i;
 }
 
@@ -199,7 +272,6 @@ static void setup_old(int i)
     }
 }
 
-static bool is_linear = true;
 static bool is_horizontal = true;
 
 static void render(void)
@@ -209,22 +281,35 @@ static void render(void)
 
     if (step)
     {
+#if 0
         int omp_get_num_threads(void);
+#endif
+        if (!is_linear)
+        {
         uint64_t timeout = SDL_GetTicks64() + framerate;
         while (SDL_GetTicks64() < timeout && step)
             step = !(is_linear ? camera_step_linear : camera_step_random)(&camera, work);
 
         (step ? benchmark_frame : benchmark_done)(SDL_GetTicks64());
+        }
+        else
+        {
+            // TODO ???
+        }
     }
 
     int pitch;
     void *pixels = NULL;
     TRY(SDL_LockTexture(canvas.texture, &IN_RECT, &pixels, &pitch));
 
-    if (output_width * pf->BytesPerPixel == pitch)
-        (void)memcpy(pixels, canvas.pixels, pitch * output_height);
-    else for (int j = 0; j < output_height; j++)
-        (void)memcpy(((unsigned char *)(pixels)) + j * pitch, canvas.pixels + j * output_width, pitch);
+    // XXX protect for now.
+    if (!is_linear)
+    {
+        if (output_width * pf->BytesPerPixel == pitch)
+            (void)memcpy(pixels, canvas.pixels, pitch * output_height);
+        else for (int j = 0; j < output_height; j++)
+            (void)memcpy(((unsigned char *)(pixels)) + j * pitch, canvas.pixels + j * output_width, pitch);
+    }
 
     if (step && !is_linear) {
         if (is_horizontal)
@@ -306,7 +391,8 @@ static void render(void)
 
     SDL_UnlockTexture(canvas.texture);
 
-    SDL_RenderCopy(renderer, canvas.texture, &IN_RECT, &OUT_RECT);
+    if (!is_linear)
+        SDL_RenderCopy(renderer, canvas.texture, &IN_RECT, &OUT_RECT);
 
     SDL_RenderPresent(renderer);
 }
@@ -314,7 +400,7 @@ static void render(void)
 static void resize(int width, int height)
 {
     state = STATE_STOP;
-    action = ACTION_RESIZE;
+    is_resize = true;
     resize_param_width = width;
     resize_param_height = height;
 }
@@ -553,25 +639,24 @@ static void iter(void)
         TRY(-1 == (cause = SDL_TryLockMutex(hold)));
         if (0 == cause)
         {
-            switch (action)
+            if (is_setup)
             {
-                // locked, is sleeping
-                case ACTION_NONE:
-                    // XXX What do we do, again?
-                break;
-                case ACTION_CHANGE:
-                    change_old();
-                break;
-                case ACTION_SETUP:
-                    setup_old(setup_param_1);
-                break;
-                case ACTION_RESIZE:
-                    resize_old(resize_param_width, resize_param_height);
-                break;
-                default:
-                    assert(!"blown up, destroyed");
-                break;
+                is_setup = false;
+                is_change = false;
+                setup_old(setup_param_1);
             }
+            if (is_resize)
+            {
+                is_resize = false;
+                is_change = false;
+                resize_old(resize_param_width, resize_param_height);
+            }
+            if (is_change)
+            {
+                is_change = false;
+                change_old();
+            }
+
             TRY(-1 == SDL_UnlockMutex(hold));
             state = STATE_RUN;
             TRY(SDL_CondSignal(go) != 0);

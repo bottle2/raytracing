@@ -69,7 +69,7 @@ void camera_init(struct camera *camera) {
     camera->j = 0;
 }
 
-static void eval_pixel(struct camera camera[static 1], int i, int j)
+void eval_pixel(struct camera camera[static 1], int i, int j)
 {
     union vec3 pixel_color = COLOR(0,0,0);
 
