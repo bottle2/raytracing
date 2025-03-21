@@ -29,6 +29,7 @@ static bool is_playing = true;
 #endif
 
 _Static_assert(2 == ATOMIC_CHAR_LOCK_FREE, "Fuck no atomic char");
+_Static_assert(2 == ATOMIC_SHORT_LOCK_FREE, "Fuck no atomic short");
 
 #include "benchmark.h"
 #include "camera.h"
@@ -45,6 +46,8 @@ bool is_parallel = false;
 
 static struct camera camera;
 static bool is_linear = true;
+
+struct canvas canvas = {.fill = CANVAS_FILL_LINEAR};
 
 // XXX
 // Yeah.
@@ -69,11 +72,12 @@ static int painter(void *data)
 
         if (is_linear)
         {
+            uint64_t start = SDL_GetTicks64();
             if (!is_parallel)
             {
-                for (int i = 0; i < camera.image_height; i++)
+                for (int j = 0; j < camera.image_height; j++)
                 {
-                    for (int j = 0; j < camera.image_width; j++)
+                    for (int i = 0; i < camera.image_width; i++)
                     {
                         switch (state)
                         {
@@ -84,6 +88,7 @@ static int painter(void *data)
                         }
 
                         eval_pixel(&camera, i, j);
+			canvas.progress[j]++;
                     }
                 }
             }
@@ -91,9 +96,9 @@ static int painter(void *data)
             {
 #ifdef __EMSCRIPTEN__
                 #pragma omp parallel for
-                for (int i = 0; i < camera.image_height; i++)
+                for (int j = 0; j < camera.image_height; j++)
                 {
-                    for (int j = 0; j < camera.image_width; j++)
+                    for (int i = 0; i < camera.image_width; i++)
                     {
                         switch (state)
                         {
@@ -104,14 +109,15 @@ static int painter(void *data)
                         }
 
                         eval_pixel(&camera, i, j);
+			canvas.progress[j]++;
                     }
 skip:;
                 }
 #else
                 #pragma omp parallel for schedule(dynamic)
-                for (int i = 0; i < camera.image_height; i++)
+                for (int j = 0; j < camera.image_height; j++)
                 {
-                    for (int j = 0; j < camera.image_width; j++)
+                    for (int i = 0; i < camera.image_width; i++)
                     {
                         switch (state)
                         {
@@ -122,6 +128,7 @@ skip:;
                         }
 
                         eval_pixel(&camera, i, j);
+			canvas.progress[j]++;
                     }
 skip:;
                 }
@@ -129,6 +136,7 @@ skip:;
                 if (STATE_DIE == state)
                     goto finish;
             }
+            SDL_Log("%s took %" PRIu64 " ms\n", is_parallel ? "par." : "seq.", SDL_GetTicks64() - start);
         }
 
 #if 0
@@ -181,8 +189,6 @@ static int pad_y = 0;
 #define IN_RECT  (SDL_Rect){0, 0, output_width, output_height}
 #define OUT_RECT (SDL_Rect){pad_x, pad_y, output_width, output_height}
 
-struct canvas canvas = {.fill = CANVAS_FILL_LINEAR};
-
 static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
 {
     (void)data;
@@ -219,7 +225,7 @@ static bool is_change = false;
 static bool is_setup = false;
 static bool is_resize = false;
 // XXX readability/10
-int setup_param_1; // XXX Closur/10
+int setup_param_1; // XXX Closure/10
 int resize_param_width;
 int resize_param_height;
 
@@ -231,10 +237,16 @@ void change(void)
 
 void change_old(void)
 {
+    SDL_Log("should've cleaned\n");
     memset(canvas.pixels, 0, sizeof (pixel) * output_width * output_height);
     memset(canvas.used, 0, sizeof (bool) * output_width * output_height);
     camera.samples_per_pixel = samples_per_pixel;
     camera_init(&camera);
+
+    // IRC told me it is safe to memset array of atomic if its access is locked!
+    // XXX could be a source of bug, pay attention!!
+    memset(canvas.progress, 0, sizeof (*canvas.progress) * output_height);
+
     step = true;
 }
 
@@ -294,7 +306,8 @@ static void render(void)
         }
         else
         {
-            // TODO ???
+            // TODO Do it (what?)
+            // XXX IS linear
         }
     }
 
@@ -309,6 +322,13 @@ static void render(void)
             (void)memcpy(pixels, canvas.pixels, pitch * output_height);
         else for (int j = 0; j < output_height; j++)
             (void)memcpy(((unsigned char *)(pixels)) + j * pitch, canvas.pixels + j * output_width, pitch);
+    }
+    else // XXX DANGER
+    {
+        for (int j = 0; j < output_height; j++)
+        {
+            (void)memcpy(((unsigned char *)(pixels)) + j * pitch, canvas.pixels + j * output_width, canvas.progress[j] * 4); // FUCK portability. FUCK ME. FUCK
+        }
     }
 
     if (step && !is_linear) {
@@ -391,7 +411,9 @@ static void render(void)
 
     SDL_UnlockTexture(canvas.texture);
 
+#if 0
     if (!is_linear)
+#endif
         SDL_RenderCopy(renderer, canvas.texture, &IN_RECT, &OUT_RECT);
 
     SDL_RenderPresent(renderer);
@@ -578,8 +600,8 @@ static void iter(void)
                         SDL_Log("viewport %d %d\n", v.w, v.h);
                     }
                 break;
-                case 't': is_parallel = true; break;
-                case 'y': is_parallel = false; break;
+                case 't': is_parallel = true; change(); break;
+                case 'y': is_parallel = false; change(); break;
 		case 'u':
                 {
                     extern bool is_uv;

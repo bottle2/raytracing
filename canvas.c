@@ -58,6 +58,7 @@ void canvas_init(struct canvas canvas[static 1], SDL_Renderer *renderer)
     #undef X
     canvas->used2 = canvas->used + max_width*max_height;
     canvas_create_texture(canvas, renderer);
+    TRYE(!(canvas->progress = malloc(sizeof (*canvas->progress) * max_height)));
 }
 
 void canvas_end(struct canvas canvas[static 1])

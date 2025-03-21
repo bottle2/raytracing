@@ -38,6 +38,7 @@ struct canvas
     #undef X
     bool *used2;
     SDL_Texture *texture;
+    _Atomic short *progress;
 };
 
 extern SDL_PixelFormat *pf;
