@@ -94,11 +94,19 @@ static int painter(void *data)
             }
             else
             {
+                _Atomic bool innit;
+                atomic_init(&innit, false);
 #ifdef __EMSCRIPTEN__
-                #pragma omp parallel for
-                for (int j = 0; j < camera.image_height; j++)
+                #pragma omp parallel for num_threads(4)
+                for (int i = 0; i < camera.image_height; i++)
                 {
-                    for (int i = 0; i < camera.image_width; i++)
+                    int omp_get_num_threads(void);
+                    if (!innit)
+                    {
+                        SDL_Log("inside parallel I have %d\n", omp_get_num_threads());
+                        innit = true;
+                    }
+                    for (int k = 0; k < camera.image_width; k++)
                     {
                         switch (state)
                         {
@@ -108,8 +116,8 @@ static int painter(void *data)
                             default:         assert(!"invalid"); break;
                         }
 
-                        eval_pixel(&camera, i, j);
-			canvas.progress[j]++;
+                        eval_pixel(&camera, k, i);
+			canvas.progress[i]++;
                     }
 skip:;
                 }
@@ -245,7 +253,9 @@ void change_old(void)
 
     // IRC told me it is safe to memset array of atomic if its access is locked!
     // XXX could be a source of bug, pay attention!!
+#if 1
     memset(canvas.progress, 0, sizeof (*canvas.progress) * output_height);
+#endif
 
     step = true;
 }
@@ -327,7 +337,15 @@ static void render(void)
     {
         for (int j = 0; j < output_height; j++)
         {
+            int lala = canvas.progress[j];
+            if (lala > output_width)
+            {
+                SDL_Log("below %d: was %d\n", output_width, lala);
+                fflush(stdout);
+                assert(!"DIE");
+            }
             (void)memcpy(((unsigned char *)(pixels)) + j * pitch, canvas.pixels + j * output_width, canvas.progress[j] * 4); // FUCK portability. FUCK ME. FUCK
+            (void)memset(((unsigned char *)(pixels)) + j * pitch + canvas.progress[j] * 4, 1515, (output_width - canvas.progress[j]) * 4); // FUCK portability. FUCK ME. FUCK
         }
     }
 
