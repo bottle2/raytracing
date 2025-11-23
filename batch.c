@@ -13,6 +13,8 @@ static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
     (void)x;
     (void)y;
     printf(COLOR_FMT "\n", (int)r, (int)g, (int)b);
+    // TODO Obvious data race when parallel
+    //      Print only if not parallel
 }
 
 bool is_parallel = false;

@@ -96,6 +96,13 @@ Essential:
 - Reliable mouse ungrab in HTML5
 - Physics based movement
 - Branding
+- Parallel loop should be dynamic
+- Improve metric collection
+  - Only painting part
+  - See how much paints in X seconds
+- Different parallelism approaches
+  - 100% parallel with atomic retrieval
+  - Each thread with its own clock
 
 Other:
 
@@ -110,10 +117,11 @@ Other:
 - Reliable fullscreen
 - Editor for new scenes
 - Sharing scenes as platform-specific user creations
-- More shapes, such quadric surfaces
+- More shapes, such as quadric surfaces
 - Leverage some existing math library rather than NIH syndrome 
 - More types such as unit vector or measurement-aware reals
 - Better Makefile
+- Analyze performance using Intel vTune
 
 Geometry math expressions are to be simplified by employing ordinary
 operators between dollar signs, then have a program translate them

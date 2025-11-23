@@ -1,5 +1,8 @@
 *.o
 *.exe
+*.d
 tags
 index.*
 *.zip
+image.png
+dep.mk

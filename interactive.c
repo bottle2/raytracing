@@ -28,6 +28,7 @@ static bool is_playing = true;
 #error We are fucked.
 #endif
 
+_Static_assert(2 == ATOMIC_BOOL_LOCK_FREE, "Fuck no atomic bool");
 _Static_assert(2 == ATOMIC_CHAR_LOCK_FREE, "Fuck no atomic char");
 _Static_assert(2 == ATOMIC_SHORT_LOCK_FREE, "Fuck no atomic short");
 
@@ -45,7 +46,7 @@ char _Atomic state;
 bool is_parallel = false;
 
 static struct camera camera;
-static bool is_linear = true;
+static bool is_linear = false;
 
 struct canvas canvas = {.fill = CANVAS_FILL_LINEAR};
 
@@ -56,6 +57,13 @@ struct canvas canvas = {.fill = CANVAS_FILL_LINEAR};
 // estado só se aplica enquanto tá pintando, são mensagens.
 // quando acorda, precisa estar tudo definido, coisa inválida inaceitável
 
+// XXX FUCK modularization. KLUDGE to no end. FUCK code reuse. FUCK
+//     modularization is for PUSSIES. behold what MANLY code looks like
+//     HAHAHAHAHAHAHHAHAHA
+//     I'm a fucking three-star C programmer, job interviwers fear me
+//     I'm unemployed. please hire me.
+static bool _Atomic do_benchmark;
+
 SDL_cond *go;
 SDL_mutex *hold;
 static int painter(void *data)
@@ -64,22 +72,64 @@ static int painter(void *data)
 
     TRY(-1 == SDL_LockMutex(hold));
 
+    bool doing_benchmark = false;
+    enum stage { STAGE_SEQ, STAGE_PAR, // XXX FUcking useless acronyms.
+#ifndef __EMSCRIPTEN // XXX FUCK all good practices. KLUDGE KLUDGE
+        STAGE_DYNAMIC
+#endif
+    } stage;
+    uint64_t start;
+    int n_completed;
+    // did you know how much I like unitialized automatic variables? that's how I party.
+    bool _Atomic stop;
+
     while (1)
     {
+        if (do_benchmark)
+        {
+            do_benchmark = false;
+            doing_benchmark = true;
+            stage = STAGE_SEQ;
+            start = SDL_GetTicks64();
+            n_completed = 0;
+            // We are going to hell with this one.
+            // There is no place in heaven for me.
+            // Amateur programmers cannot produce as much shit as I can, voluntarily.
+        }
         // Fuck headers. XXX FUCK
         // fuck.........
         void eval_pixel(struct camera camera[static 1], int i, int j);
 
+        assert(!doing_benchmark || (is_linear && doing_benchmark && "you moron idiot"));
+
+        #define TIMEOUT (1000 * 60 * 10) // in ms
+
         if (is_linear)
         {
-            uint64_t start = SDL_GetTicks64();
-            if (!is_parallel)
+            // XXX More kludge.
+            for (int j = 0; j < camera.image_height; j++)
+                canvas.progress[j] = 0;
+
+            if ((!is_parallel && !doing_benchmark) || (doing_benchmark && STAGE_SEQ == stage))
             {
                 for (int j = 0; j < camera.image_height; j++)
                 {
                     for (int i = 0; i < camera.image_width; i++)
                     {
-                        switch (state)
+                        if (doing_benchmark && SDL_GetTicks64() - start > TIMEOUT)
+                        {
+                            // XXX We are stopping benchmark
+                            stage = STAGE_PAR;
+                            int last = 0;
+                            for (int j_ = 0; j_ < camera.image_height; j_++)
+                                last += canvas.progress[j];
+                            SDL_Log("seq. completed: %d, last had %d pixels\n", n_completed, last);
+                            n_completed = 0;
+                            start = SDL_GetTicks64();
+                            stop = false;
+                            goto done;
+                        }
+                        else switch (state)
                         {
                             case STATE_RUN:  /* Do nothing. */   break;
                             case STATE_STOP: goto done;          break;
@@ -91,60 +141,109 @@ static int painter(void *data)
 			canvas.progress[j]++;
                     }
                 }
+
+                if (doing_benchmark)
+                    n_completed++;
             }
             else
+#ifndef __EMSCRIPTEN__ // XXX no programming language is COMPLETE without a preprocessor
+                if (doing_benchmark && STAGE_PAR == stage)
+#endif
             {
-                _Atomic bool innit;
-                atomic_init(&innit, false);
-#ifdef __EMSCRIPTEN__
                 #pragma omp parallel for num_threads(4)
                 for (int i = 0; i < camera.image_height; i++)
                 {
-                    int omp_get_num_threads(void);
-                    if (!innit)
-                    {
-                        SDL_Log("inside parallel I have %d\n", omp_get_num_threads());
-                        innit = true;
-                    }
                     for (int k = 0; k < camera.image_width; k++)
                     {
-                        switch (state)
+                        if (doing_benchmark)
+                        {
+                            if (SDL_GetTicks64() - start > TIMEOUT)
+                            {
+                                stop = true; goto skip_1;
+                            }
+                            else if (stop)
+                                goto skip_1;
+                        }
+                        else switch (state)
                         {
                             case STATE_RUN:  /* Do nothing. */   break;
-                            case STATE_STOP: goto skip;          break;
-                            case STATE_DIE:  goto skip;        break;
+                            case STATE_STOP: goto skip_1;          break;
+                            case STATE_DIE:  goto skip_1;        break;
                             default:         assert(!"invalid"); break;
                         }
 
                         eval_pixel(&camera, k, i);
 			canvas.progress[i]++;
                     }
-skip:;
+skip_1:;
                 }
+
+                if (doing_benchmark && !stop)
+                    n_completed++;
+
+                if (doing_benchmark && stop)
+                {
+                    int last = 0;
+                    for (int j_ = 0; j_ < camera.image_height; j_++)
+                        last += canvas.progress[j_];
+                    SDL_Log("par. completed: %d, last had %d pixels\n", n_completed, last);
+#ifndef __EMSCRIPTEN__
+                    stop = false;
+                    stage = STAGE_DYNAMIC;
+                    n_completed = 0;
+                    start = SDL_GetTicks64();
 #else
+                    doing_benchmark = false;
+#endif
+                }
+
+#ifndef __EMSCRIPTEN__
+            }
+            else
+            {
                 #pragma omp parallel for schedule(dynamic)
                 for (int j = 0; j < camera.image_height; j++)
                 {
                     for (int i = 0; i < camera.image_width; i++)
                     {
+                        if (doing_benchmark)
+                        {
+                            if (SDL_GetTicks64() - start > TIMEOUT)
+                            {
+                                stop = true; goto skip_2;
+                            }
+                            else if (stop)
+                                goto skip_2;
+                        }
                         switch (state)
                         {
                             case STATE_RUN:  /* Do nothing. */   break;
-                            case STATE_STOP: goto skip;          break;
-                            case STATE_DIE:  goto skip;        break;
+                            case STATE_STOP: goto skip_2;          break;
+                            case STATE_DIE:  goto skip_2;        break;
                             default:         assert(!"invalid"); break;
                         }
 
                         eval_pixel(&camera, i, j);
 			canvas.progress[j]++;
                     }
-skip:;
+skip_2:;
+                }
+
+                if (doing_benchmark && !stop)
+                    n_completed++;
+
+                if (doing_benchmark && stop)
+                {
+                    int last = 0;
+                    for (int j_ = 0; j_ < camera.image_height; j_++)
+                        last += canvas.progress[j_];
+                    SDL_Log("dynamic. completed: %d, last had %d pixels\n", n_completed, last);
+                    doing_benchmark = false;
                 }
 #endif
                 if (STATE_DIE == state)
                     goto finish;
             }
-            SDL_Log("%s took %" PRIu64 " ms\n", is_parallel ? "par." : "seq.", SDL_GetTicks64() - start);
         }
 
 #if 0
@@ -167,7 +266,8 @@ done:
 #if 0
 	SDL_Log("sleeping...\n");
 #endif
-        SDL_CondWait(go, hold);
+        if (!doing_benchmark)
+            SDL_CondWait(go, hold);
 #if 0
         SDL_Log("woke up!\n");
 #endif
@@ -545,10 +645,15 @@ static void iter(void)
                 break;
                 case 'b':
                     #define BENCHMARK_SAMPLES 500
+#if 1
                     samples_per_pixel = BENCHMARK_SAMPLES;
 		    depth = 50;
+#endif
                     is_linear = true;
+		    do_benchmark = true;
+#if 0
                     benchmark_start(SDL_GetTicks64());
+#endif
                     goto fullscreen;
                 break;
 
@@ -715,7 +820,8 @@ int main(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
-    atomic_init(&state, STATE_RUN);
+    atomic_init(&state, STATE_STOP);
+    atomic_init(&do_benchmark, false);
 
     SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
 

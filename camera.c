@@ -97,7 +97,7 @@ bool camera_step_linear(struct camera camera[static 1], int n)
 
     {
         int left = width * (camera->image_height - j_0) - i_0;
-        if (left < n)
+        if (left < n || n < 1)
             n = left;
     }
 
@@ -105,6 +105,11 @@ bool camera_step_linear(struct camera camera[static 1], int n)
     #define OFFSET_J(O) (j_0 + ((i_0 + (O)) / width))
     #define OFFSET_I_J(O) OFFSET_I((O)), OFFSET_J((O))
 
+#ifndef __EMSCRIPTEN__
+    #pragma omp parallel for schedule(dynamic) if(is_parallel)
+    for (int k = 0; k < n; k++)
+        eval_pixel(camera, OFFSET_I_J(k));
+#else
     if (is_parallel)
         #pragma omp parallel for //if(is_parallel)
         for (int k = 0; k < n; k++)
@@ -112,6 +117,7 @@ bool camera_step_linear(struct camera camera[static 1], int n)
     else
         for (int k = 0; k < n; k++)
             eval_pixel(camera, OFFSET_I_J(k));
+#endif
 
     camera->i = OFFSET_I(n);
     camera->j = OFFSET_J(n);
@@ -137,6 +143,14 @@ bool camera_step_random(struct camera camera[static 1], int n)
 
     assert(n >= 0);
 
+#ifndef __EMSCRIPTEN__
+        #pragma omp parallel for schedule(dynamic) if(is_parallel)
+        for (int k = 0; k < n; k++)
+            eval_pixel(camera,
+                    random_interval(0, camera->image_width),
+                    slice(camera->image_height)
+            );
+#else
     if (is_parallel)
         #pragma omp parallel for //if(is_parallel)
         for (int k = 0; k < n; k++)
@@ -150,6 +164,7 @@ bool camera_step_random(struct camera camera[static 1], int n)
                     random_interval(0, camera->image_width),
                     random_interval(0, camera->image_height)
             );
+#endif
 
     return false;
 }
