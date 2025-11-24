@@ -189,6 +189,26 @@ define(`debug',`
  CFLAG(`-g3')
 ')
 
+define(`coverage',`
+ EMPTY
+ FOR(`all')
+ CFLAG(`--```coverage'''')
+')
+
+dnl # TODO: MC/DC coverage (varies to GCC and Clang)
+
+define(`pgo_collect',`
+ EMPTY
+ FOR(`all')
+ CFLAG(`-fprofile-generate')
+')
+
+define(`pgo_apply',`
+ EMPTY
+ FOR(`all')
+ CFLAG(`-fprofile-use=native_omp_pgo_collect')
+')
+
 define(`html5_opt',`
  EMPTY
  FOR(`all')
@@ -205,6 +225,9 @@ TREE(`html5_omp_san',`html5_common`'html5_san')
 TREE(`html5_omp_opt',`html5_common`'html5_opt')
 TREE(`native_omp_opt',`native`'opt')
 TREE(`native_omp_debug',`native`'debug')
+TREE(`native_omp_coverage',`native`'coverage')
+TREE(`native_omp_pgo_collect',`native`'opt`'pgo_collect')
+TREE(`native_omp_pgo',`native`'opt`'pgo_apply')
 divert(0)dnl
 OBJ_FULL =EXPAND(`ALL',` \
  $1')

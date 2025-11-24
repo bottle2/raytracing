@@ -7,17 +7,15 @@
 #include "color.h"
 #include "scene.h"
 
+static struct pixel { unsigned char r, g, b; } pixels[4000][4000];
+
 static void set_pixel(void *data, int x, int y, uint8_t r, uint8_t g, uint8_t b)
 {
     (void)data;
-    (void)x;
-    (void)y;
-    printf(COLOR_FMT "\n", (int)r, (int)g, (int)b);
-    // TODO Obvious data race when parallel
-    //      Print only if not parallel
+    pixels[x][y] = (struct pixel){r,g,b};
 }
 
-bool is_parallel = false;
+bool is_parallel = true;
 
 int main(int argc, char *argv[])
 {
@@ -37,6 +35,13 @@ int main(int argc, char *argv[])
     printf("P3\n%d %d\n255\n", batch.image_width, batch.image_height);
 
     camera_step_linear(&batch, -1);
+
+    for (int y = 0; y < batch.image_height; y++)
+        for (int x = 0; x < batch.image_width; x++)
+        {
+            struct pixel p = pixels[x][y];
+            printf(COLOR_FMT "\n", p.r, p.g, p.b);
+        }
 
     fprintf(stderr, "Done\n");
 
