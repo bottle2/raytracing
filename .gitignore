@@ -6,3 +6,6 @@ index.*
 *.zip
 image.png
 dep.mk
+*.gcda
+*.gcno
+*.profdata

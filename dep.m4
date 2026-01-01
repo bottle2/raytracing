@@ -79,6 +79,7 @@ GROUP(`interactive')
 EMPTY
 ADDCXX(`simpleomp')
 ADDC(`batch')
+ADDC(`stupid')
 
 define(`native',`
  define(`interactive_deps',)
@@ -221,6 +222,27 @@ define(`html5_san',`
  CFLAG(`-gsource-map -g3 -Og -fsanitize=address,undefined,bounds')
 ')
 
+dnl # My Android is 12, API level 32+
+dnl # https://source.android.com/docs/security/test/cfi
+
+define(`android_',`
+ EMPTY
+ ADD(`stupid.o')
+ CFLAG(`-Wpedantic')
+ CFLAG(`-Wall')
+ CFLAG(`-Wextra')
+ CFLAG(`-D__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK')
+ CFLAG(`-Werror=unguarded-availability')
+ CFLAG(`-Werror=return-type')
+ CFLAG(`-Werror=int-to-pointer-cast')
+ CFLAG(`-Werror=pointer-to-int-cast')
+ CFLAG(`-Werror=implicit-function-declaration')
+
+ `-Wl,--gc-sections'
+')
+
+define(`android_')
+
 TREE(`html5_omp_san',`html5_common`'html5_san')
 TREE(`html5_omp_opt',`html5_common`'html5_opt')
 TREE(`native_omp_opt',`native`'opt')
@@ -228,6 +250,7 @@ TREE(`native_omp_debug',`native`'debug')
 TREE(`native_omp_coverage',`native`'coverage')
 TREE(`native_omp_pgo_collect',`native`'opt`'pgo_collect')
 TREE(`native_omp_pgo',`native`'opt`'pgo_apply')
+TREE(`android',`android_')
 divert(0)dnl
 OBJ_FULL =EXPAND(`ALL',` \
  $1')

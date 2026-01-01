@@ -1,0 +1,24 @@
+Desconsiderado
+- Menos citação direta
+  - Skill issue
+- "Análise do gargalo do OpenMP no WebAssembly"
+- Explorar alternativas para otimizar paralelismo na Web, sugerindo alterações na runtime ou modelo de 
+execução
+- Impacto da escolha de parâmetros na eficiência
+  - Skill issue
+- Seção 2 mais curta para alongar metodologia e resultados
+  - Aí mata informações. Não.
+
+Complicado:
+- Explicar sub-otimização.
+- Profiler foda: Intel VTune, NVidia Visual Profiler, Visual Studio
+  - Motivo da redução /2 e não /4
+- Discussão mais aprofundada da diferença de desempenho entre Web e nativo
+- Melhorar o paralelismo para se aproximar do ideal
+
+Fácil:
+- Não entendeu onde ocorreu a coleta
+  - Função principal do RT ou tudo?
+  - Há partes sequenciais?
+- 2 linhas a mais na seção 2
+  Organizar trabalhos relacionados enfatizando mais as contribuições e lacunas a abordar
